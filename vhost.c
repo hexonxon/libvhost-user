@@ -15,6 +15,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/mman.h>
 
 #include "vhost.h"
 #include "vhost-protocol.h"
@@ -136,6 +137,47 @@ static int vhost_reset_owner(struct vhost_dev* dev, struct vhost_user_message* m
     return 0;
 }
 
+static int vhost_set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+{
+    if (msg->mem_regions.num_regions >= VHOST_USER_MAX_FDS ||
+        msg->mem_regions.num_regions != nfds) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < nfds; ++i) {
+        struct vhost_user_mem_region* mr = &msg->mem_regions.regions[i];
+        int fd = fds[i];
+
+        /* Zero-sized regions look fishy */
+        if (mr->size == 0) {
+            return -1;
+        }
+
+        /* We assume regions to be at least page-aligned */
+        if ((mr->guest_addr & (PAGE_SIZE - 1)) ||
+            (mr->size & (PAGE_SIZE - 1)) ||
+            ((mr->user_addr + mr->mmap_offset) & (PAGE_SIZE - 1))) {
+            return -1;
+        }
+
+        void* ptr = mmap(NULL, mr->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, mr->mmap_offset);
+        if (ptr == MAP_FAILED) {
+            /* Unmap everything we have already mapped */
+            for (size_t j = 0; j < i; ++j) {
+                munmap(dev->mapped_regions[j].ptr, dev->mapped_regions[j].mr.size);
+            }
+
+            return -1;
+        }
+
+        dev->mapped_regions[i].fd = fd;
+        dev->mapped_regions[i].ptr = ptr;
+        dev->mapped_regions[i].mr = *mr;
+    }
+
+    return 0;
+}
+
 void vhost_handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     assert(dev);
@@ -148,7 +190,7 @@ void vhost_handle_message(struct vhost_dev* dev, struct vhost_user_message* msg,
         vhost_set_features, /* VHOST_USER_SET_FEATURES         */
         vhost_set_owner,    /* VHOST_USER_SET_OWNER            */
         vhost_reset_owner,  /* VHOST_USER_RESET_OWNER          */
-        NULL, /* VHOST_USER_SET_MEM_TABLE        */
+        vhost_set_mem_table, /* VHOST_USER_SET_MEM_TABLE        */
         NULL, /* VHOST_USER_SET_LOG_BASE         */
         NULL, /* VHOST_USER_SET_LOG_FD           */
         NULL, /* VHOST_USER_SET_VRING_NUM        */
@@ -216,6 +258,15 @@ drop:
 
 void vhost_reset_dev(struct vhost_dev* dev)
 {
+    /* Unmap mapped regions */
+    for (size_t i = 0; i < VHOST_USER_MAX_FDS; ++i) {
+        if (dev->mapped_regions[i].ptr == NULL) {
+            break;
+        }
+
+        munmap(dev->mapped_regions[i].ptr, dev->mapped_regions[i].mr.size);
+    }
+
     memset(dev, 0, sizeof(*dev));
     dev->connfd = -1;
 }
