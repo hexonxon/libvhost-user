@@ -14,7 +14,7 @@ $(BINDIR):
 	mkdir -p $@
 
 $(BINDIR)/%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -fPIC -c $< -o $@
 
 $(TARGET): $(BINDIR) $(HDRS) $(OBJS)
 	$(CC) $(LDFLAGS) $(OBJS) $(LIBS) -shared -o $@
