@@ -213,3 +213,9 @@ void vhost_handle_message(struct vhost_dev* dev, struct vhost_user_message* msg,
 drop:
     vhost_drop_connection(dev);
 }
+
+void vhost_reset_dev(struct vhost_dev* dev)
+{
+    memset(dev, 0, sizeof(*dev));
+    dev->connfd = -1;
+}

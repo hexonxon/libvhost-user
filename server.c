@@ -169,19 +169,14 @@ static void handle_server_event(struct event_cb* cb, int fd, uint32_t events)
     }
 }
 
-static void reset_dev(struct vhost_dev* dev)
-{
-    memset(dev, 0, sizeof(*dev));
-    dev->connfd = -1;
-}
-
 int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path)
 {
     assert(dev);
     assert(socket_path);
 
+    vhost_reset_dev(dev);
+
     int error = 0;
-    reset_dev(dev);
 
     /*
      * Create and configure listening socket
@@ -214,7 +209,6 @@ int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path)
      * Register listen socket with the global vhost event loop
      */
 
-    dev->connfd = -1;
     dev->server_cb = (struct event_cb){ EPOLLIN | EPOLLHUP, dev, handle_server_event };
     vhost_evloop_add_fd(dev->listenfd, &dev->server_cb);
 
@@ -237,5 +231,5 @@ void vhost_drop_connection(struct vhost_dev* dev)
     vhost_evloop_del_fd(dev->connfd);
     close(dev->connfd);
 
-    reset_dev(dev);
+    vhost_reset_dev(dev);
 }
