@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+#include <stdbool.h>
 #include <sys/queue.h>
 
 #include "evloop.h"
@@ -20,6 +22,13 @@ struct vhost_dev
 
     /** event callback for server events */
     struct event_cb server_cb;
+
+    /** features we negotiated successfully over handshake */
+    uint64_t negotiated_features;
+    uint64_t negotiated_protocol_features;
+
+    /** We have received VHOST_USER_SET_OWNER */
+    bool session_started;
 
     LIST_ENTRY(vhost_dev) link;
 };

@@ -5,6 +5,76 @@
 #define VHOST_USER_MAX_FDS 8
 
 /**
+ * Feature bits
+ */
+#define VHOST_USER_F_PROTOCOL_FEATURES  30
+
+/**
+ * Protocol feature bits
+ */
+#define VHOST_USER_PROTOCOL_F_MQ                    0
+#define VHOST_USER_PROTOCOL_F_LOG_SHMFD             1
+#define VHOST_USER_PROTOCOL_F_RARP                  2
+#define VHOST_USER_PROTOCOL_F_REPLY_ACK             3
+#define VHOST_USER_PROTOCOL_F_MTU                   4
+#define VHOST_USER_PROTOCOL_F_SLAVE_REQ             5
+#define VHOST_USER_PROTOCOL_F_CROSS_ENDIAN          6
+#define VHOST_USER_PROTOCOL_F_CRYPTO_SESSION        7
+#define VHOST_USER_PROTOCOL_F_PAGEFAULT             8
+#define VHOST_USER_PROTOCOL_F_CONFIG                9
+#define VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD        10
+#define VHOST_USER_PROTOCOL_F_HOST_NOTIFIER        11
+#define VHOST_USER_PROTOCOL_F_INFLIGHT_SHMFD       12
+#define VHOST_USER_PROTOCOL_F_RESET_DEVICE         13
+#define VHOST_USER_PROTOCOL_F_INBAND_NOTIFICATIONS 14
+#define VHOST_USER_PROTOCOL_F_CONFIGURE_MEM_SLOTS  15
+#define VHOST_USER_PROTOCOL_F_STATUS               16
+
+/**
+ * Master message ids
+ */
+#define VHOST_USER_GET_FEATURES             1
+#define VHOST_USER_SET_FEATURES             2
+#define VHOST_USER_SET_OWNER                3
+#define VHOST_USER_RESET_OWNER              4
+#define VHOST_USER_SET_MEM_TABLE            5
+#define VHOST_USER_SET_LOG_BASE             6
+#define VHOST_USER_SET_LOG_FD               7
+#define VHOST_USER_SET_VRING_NUM            8
+#define VHOST_USER_SET_VRING_ADDR           9
+#define VHOST_USER_SET_VRING_BASE           10
+#define VHOST_USER_GET_VRING_BASE           11
+#define VHOST_USER_SET_VRING_KICK           12
+#define VHOST_USER_SET_VRING_CALL           13
+#define VHOST_USER_SET_VRING_ERR            14
+#define VHOST_USER_GET_PROTOCOL_FEATURES    15
+#define VHOST_USER_SET_PROTOCOL_FEATURES    16
+#define VHOST_USER_GET_QUEUE_NUM            17
+#define VHOST_USER_SET_VRING_ENABLE         18
+#define VHOST_USER_SEND_RARP                19
+#define VHOST_USER_NET_SET_MTU              20
+#define VHOST_USER_SET_SLAVE_REQ_FD         21
+#define VHOST_USER_IOTLB_MSG                22
+#define VHOST_USER_SET_VRING_ENDIAN         23
+#define VHOST_USER_GET_CONFIG               24
+#define VHOST_USER_SET_CONFIG               25
+#define VHOST_USER_CREATE_CRYPTO_SESSION    26
+#define VHOST_USER_CLOSE_CRYPTO_SESSION     27
+#define VHOST_USER_POSTCOPY_ADVISE          28
+#define VHOST_USER_POSTCOPY_LISTEN          29
+#define VHOST_USER_POSTCOPY_END             30
+#define VHOST_USER_GET_INFLIGHT_FD          31
+#define VHOST_USER_SET_INFLIGHT_FD          32
+#define VHOST_USER_GPU_SET_SOCKET           33
+#define VHOST_USER_RESET_DEVICE             34
+#define VHOST_USER_VRING_KICK               35
+#define VHOST_USER_GET_MAX_MEM_SLOTS        36
+#define VHOST_USER_ADD_MEM_REG              37
+#define VHOST_USER_REM_MEM_REG              38
+#define VHOST_USER_SET_STATUS               39
+#define VHOST_USER_GET_STATUS               40
+
+/**
  * Vhost user memory region description
  */
 struct vhost_user_mem_region
