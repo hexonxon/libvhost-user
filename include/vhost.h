@@ -56,7 +56,3 @@ struct vhost_dev
 
 int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path);
 void vhost_reset_dev(struct vhost_dev* dev);
-
-void vhost_drop_connection(struct vhost_dev* dev);
-void vhost_handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds);
-void vhost_send_reply(struct vhost_dev* dev, const struct vhost_user_message* msg);

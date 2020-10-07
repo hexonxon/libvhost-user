@@ -31,6 +31,230 @@
     (1ull << VHOST_USER_PROTOCOL_F_RESET_DEVICE) | \
     0
 
+/* Global device list */
+LIST_HEAD(, vhost_dev) g_vhost_dev_list;
+
+/* Vhost global event loop. */
+struct event_loop* g_vhost_evloop;
+
+/*
+ * Vhost global event loop.
+ * We have separate event loops for vhost protocols event and actual device queue events.
+ */
+
+__attribute__((constructor))
+static void libvhost_init(void)
+{
+    g_vhost_evloop = evloop_create();
+    assert(g_vhost_evloop);
+}
+
+static void vhost_evloop_add_fd(int fd, struct event_cb* cb)
+{
+    evloop_add_fd(g_vhost_evloop, fd, cb);
+}
+
+static void vhost_evloop_del_fd(int fd)
+{
+    evloop_del_fd(g_vhost_evloop, fd);
+}
+
+/*
+ * Communications
+ */
+
+static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds);
+
+static void drop_connection(struct vhost_dev* dev)
+{
+    assert(dev->connfd >= 0);
+
+    vhost_evloop_del_fd(dev->connfd);
+    close(dev->connfd);
+    dev->connfd = -1;
+}
+
+static void on_connect(struct vhost_dev* dev)
+{
+    /* we don't allow more that 1 active connections */
+    if (dev->connfd >= 0) {
+        return;
+    }
+
+    dev->connfd = accept4(dev->listenfd, NULL, NULL, SOCK_CLOEXEC);
+    assert(dev->connfd >= 0);
+
+    vhost_evloop_add_fd(dev->connfd, &dev->server_cb);
+}
+
+static void on_disconnect(struct vhost_dev* dev)
+{
+    vhost_reset_dev(dev);
+}
+
+static void on_read_avail(struct vhost_dev* dev)
+{
+    assert(dev->connfd >= 0);
+
+    int res = 0;
+    struct vhost_user_message msg;
+    int fds[VHOST_USER_MAX_FDS];
+
+    struct iovec iov[1];
+    iov[0].iov_base = &msg;
+    iov[0].iov_len = sizeof(msg);
+
+    union {
+        char buf[CMSG_SPACE(sizeof(fds))];
+        struct cmsghdr cmsghdr;
+    } u;
+
+    struct msghdr msghdr = {0};
+    msghdr.msg_iov = iov;
+    msghdr.msg_iovlen = sizeof(iov) / sizeof(*iov);
+    msghdr.msg_control = u.buf;
+    msghdr.msg_controllen = sizeof(u.buf);
+
+    res = recvmsg(dev->connfd, &msghdr, MSG_CMSG_CLOEXEC | MSG_DONTWAIT);
+    if (res < 0) {
+        /*
+         * Master is required to send full messages.
+         * We can terminate connection if that is not the case
+         */
+        vhost_reset_dev(dev);
+        return;
+    }
+
+    fprintf(stdout, "received %d bytes (%zu + %zu)\n", res, sizeof(msg), sizeof(msghdr));
+    assert(res == sizeof(msg) + sizeof(msghdr));
+
+    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msghdr);
+    if (!cmsg ||
+        cmsg->cmsg_level != SOL_SOCKET ||
+        cmsg->cmsg_type != SCM_RIGHTS ||
+        cmsg->cmsg_len > CMSG_LEN(sizeof(fds))) {
+        /*
+         * Master is required to send only a single control header
+         * with auxillary file desciptors.
+         */
+        vhost_reset_dev(dev);
+        return;
+    }
+
+    memcpy(fds, CMSG_DATA(cmsg), cmsg->cmsg_len);
+    handle_message(dev, &msg, fds, cmsg->cmsg_len / sizeof(*fds));
+}
+
+static void send_reply(struct vhost_dev* dev, const struct vhost_user_message* msg)
+{
+    assert(dev);
+    assert(msg);
+    assert(dev->connfd >= 0);
+
+    struct iovec iov[1];
+    iov[0].iov_base = (void*) msg;
+    iov[0].iov_len = sizeof(*msg);
+
+    struct msghdr msghdr = {0};
+    msghdr.msg_iov = iov;
+    msghdr.msg_iovlen = sizeof(iov) / sizeof(*iov);
+
+    ssize_t res = sendmsg(dev->connfd, &msghdr, 0);
+    if (res < 0) {
+        vhost_reset_dev(dev);
+        return;
+    }
+}
+
+static void handle_server_event(struct event_cb* cb, int fd, uint32_t events)
+{
+    struct vhost_dev* dev = cb->ptr;
+    assert(dev);
+
+    if (fd == dev->listenfd) {
+        /* we don't expect EPOLLHUP on a listening socket */
+        assert((events & ~(uint32_t)EPOLLIN) == 0);
+
+        if (events & EPOLLIN) {
+            on_connect(dev);
+        }
+    } else if (fd == dev->connfd) {
+        assert((events & ~(uint32_t)(EPOLLIN | EPOLLHUP)) == 0);
+
+        /* Handle reads first */
+        if (events & EPOLLIN) {
+            on_read_avail(dev);
+        }
+        
+        if (events & EPOLLHUP) {
+            on_disconnect(dev);
+        }
+    } else {
+        assert(0);
+    }
+}
+
+int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path)
+{
+    assert(dev);
+    assert(socket_path);
+
+    int error = 0;
+
+    memset(dev, 0, sizeof(*dev));
+
+    /*
+     * Create and configure listening socket
+     */
+
+    struct sockaddr_un addr;
+    addr.sun_family = AF_UNIX;
+    if (snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", socket_path) > sizeof(addr.sun_path)) {
+        return -ENOSPC;
+    }
+
+    dev->listenfd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (dev->listenfd < 0) {
+        return -errno;
+    }
+
+    error = bind(dev->listenfd, &addr, sizeof(addr));
+    if (error) {
+        error = -errno;
+        goto error_out;
+    }
+
+    error = listen(dev->listenfd, 1);
+    if (error) {
+        error = -errno;
+        goto error_out;
+    }
+
+    /*
+     * Register listen socket with the global vhost event loop
+     */
+
+    dev->server_cb = (struct event_cb){ EPOLLIN | EPOLLHUP, dev, handle_server_event };
+    vhost_evloop_add_fd(dev->listenfd, &dev->server_cb);
+
+    dev->connfd = -1;
+
+    /*
+     * Insert device into devices list and return
+     */
+
+    LIST_INSERT_HEAD(&g_vhost_dev_list, dev, link);
+    return 0;
+
+error_out:
+    close(dev->listenfd);
+    return error;
+}
+
+/*
+ * Request handling
+ */
+
 static inline bool has_feature(uint64_t features, int fbit)
 {
     return (features & (1ull << fbit)) != 0;
@@ -74,13 +298,13 @@ static bool must_reply_ack(const struct vhost_dev* dev, const struct vhost_user_
  */
 typedef int (*handler_fptr) (struct vhost_dev*, struct vhost_user_message*, int*, size_t);
 
-static int vhost_get_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+static int get_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     msg->u64 = VHOST_SUPPORTED_FEATURES;
     return 0;
 }
 
-static int vhost_set_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+static int set_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     if (msg->u64 & ~VHOST_SUPPORTED_FEATURES) {
         /* Master lies about features we can support */
@@ -91,7 +315,7 @@ static int vhost_set_features(struct vhost_dev* dev, struct vhost_user_message* 
     return 0;
 }
 
-static int vhost_get_protocol_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+static int get_protocol_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     /*
      * Note: VHOST_USER_GET_PROTOCOL_FEATURES can be sent by master even if slave
@@ -103,7 +327,7 @@ static int vhost_get_protocol_features(struct vhost_dev* dev, struct vhost_user_
     return 0;
 }
 
-static int vhost_set_protocol_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+static int set_protocol_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     /*
      * Note: VHOST_USER_SET_PROTOCOL_FEATURES can be sent by master even if slave
@@ -120,7 +344,7 @@ static int vhost_set_protocol_features(struct vhost_dev* dev, struct vhost_user_
     return 0;
 }
 
-static int vhost_set_owner(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+static int set_owner(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     if (dev->session_started) {
         /* Master tries to start the same session again */
@@ -131,13 +355,13 @@ static int vhost_set_owner(struct vhost_dev* dev, struct vhost_user_message* msg
     return 0;
 }
 
-static int vhost_reset_owner(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+static int reset_owner(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     /* Spec advises to ignore this message */
     return 0;
 }
 
-static int vhost_set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+static int set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     if (msg->mem_regions.num_regions >= VHOST_USER_MAX_FDS ||
         msg->mem_regions.num_regions != nfds) {
@@ -162,11 +386,7 @@ static int vhost_set_mem_table(struct vhost_dev* dev, struct vhost_user_message*
 
         void* ptr = mmap(NULL, mr->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, mr->mmap_offset);
         if (ptr == MAP_FAILED) {
-            /* Unmap everything we have already mapped */
-            for (size_t j = 0; j < i; ++j) {
-                munmap(dev->mapped_regions[j].ptr, dev->mapped_regions[j].mr.size);
-            }
-
+            /* device reset will handle unmapping if anything that was mapped */
             return -1;
         }
 
@@ -178,19 +398,19 @@ static int vhost_set_mem_table(struct vhost_dev* dev, struct vhost_user_message*
     return 0;
 }
 
-void vhost_handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     assert(dev);
     assert(msg);
     assert(fds);
     
     static const handler_fptr handler_tbl[] = {
-        NULL,               /* */
-        vhost_get_features, /* VHOST_USER_GET_FEATURES         */
-        vhost_set_features, /* VHOST_USER_SET_FEATURES         */
-        vhost_set_owner,    /* VHOST_USER_SET_OWNER            */
-        vhost_reset_owner,  /* VHOST_USER_RESET_OWNER          */
-        vhost_set_mem_table, /* VHOST_USER_SET_MEM_TABLE        */
+        NULL,           /* */
+        get_features,   /* VHOST_USER_GET_FEATURES         */
+        set_features,   /* VHOST_USER_SET_FEATURES         */
+        set_owner,      /* VHOST_USER_SET_OWNER            */
+        reset_owner,    /* VHOST_USER_RESET_OWNER          */
+        set_mem_table,  /* VHOST_USER_SET_MEM_TABLE        */
         NULL, /* VHOST_USER_SET_LOG_BASE         */
         NULL, /* VHOST_USER_SET_LOG_FD           */
         NULL, /* VHOST_USER_SET_VRING_NUM        */
@@ -200,8 +420,8 @@ void vhost_handle_message(struct vhost_dev* dev, struct vhost_user_message* msg,
         NULL, /* VHOST_USER_SET_VRING_KICK       */
         NULL, /* VHOST_USER_SET_VRING_CALL       */
         NULL, /* VHOST_USER_SET_VRING_ERR        */
-        vhost_get_protocol_features, /* VHOST_USER_GET_PROTOCOL_FEATURES*/
-        vhost_set_protocol_features, /* VHOST_USER_SET_PROTOCOL_FEATURES*/
+        get_protocol_features, /* VHOST_USER_GET_PROTOCOL_FEATURES*/
+        set_protocol_features, /* VHOST_USER_SET_PROTOCOL_FEATURES*/
         NULL, /* VHOST_USER_GET_QUEUE_NUM        */
         NULL, /* VHOST_USER_SET_VRING_ENABLE     */
         NULL, /* VHOST_USER_SEND_RARP            */
@@ -229,7 +449,7 @@ void vhost_handle_message(struct vhost_dev* dev, struct vhost_user_message* msg,
     };
 
     if (msg->request == 0 || msg->request > sizeof(handler_tbl) / sizeof(*handler_tbl)) {
-        goto drop;
+        goto reset;
     }
 
     int res = 0;
@@ -240,24 +460,27 @@ void vhost_handle_message(struct vhost_dev* dev, struct vhost_user_message* msg,
     }
 
     if (res < 0) {
-        goto drop;
+        goto reset;
     }
 
     if (message_assumes_reply(msg)) {
-        vhost_send_reply(dev, msg);
+        send_reply(dev, msg);
     } else if (must_reply_ack(dev, msg)) {
         msg->u64 = -res;
-        vhost_send_reply(dev, msg);
+        send_reply(dev, msg);
     }
 
     return;
 
-drop:
-    vhost_drop_connection(dev);
+reset:
+    vhost_reset_dev(dev);
 }
 
 void vhost_reset_dev(struct vhost_dev* dev)
 {
+    /* Drop client connection */
+    drop_connection(dev);
+
     /* Unmap mapped regions */
     for (size_t i = 0; i < VHOST_USER_MAX_FDS; ++i) {
         if (dev->mapped_regions[i].ptr == NULL) {
@@ -268,5 +491,4 @@ void vhost_reset_dev(struct vhost_dev* dev)
     }
 
     memset(dev, 0, sizeof(*dev));
-    dev->connfd = -1;
 }
