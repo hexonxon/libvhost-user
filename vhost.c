@@ -187,15 +187,15 @@ static void handle_server_event(struct event_cb* cb, int fd, uint32_t events)
             on_connect(dev);
         }
     } else if (fd == dev->connfd) {
-        assert((events & ~(uint32_t)(EPOLLIN | EPOLLHUP)) == 0);
+        assert((events & ~(uint32_t)(EPOLLIN | EPOLLHUP | EPOLLERR)) == 0);
 
-        /* Handle reads first */
-        if (events & EPOLLIN) {
-            on_read_avail(dev);
-        }
-        
-        if (events & EPOLLHUP) {
+        /* Handler disconnects first */
+        if (events & (EPOLLHUP | EPOLLERR)) {
             on_disconnect(dev);
+        } else {
+            if (events & EPOLLIN) {
+                on_read_avail(dev);
+            }
         }
     } else {
         assert(0);
