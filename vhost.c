@@ -59,6 +59,11 @@ static void vhost_evloop_del_fd(int fd)
     evloop_del_fd(g_vhost_evloop, fd);
 }
 
+int vhost_run(void)
+{
+    return evloop_run(g_vhost_evloop);
+}
+
 /*
  * Communications
  */

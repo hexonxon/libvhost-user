@@ -56,3 +56,8 @@ struct vhost_dev
 
 int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path);
 void vhost_reset_dev(struct vhost_dev* dev);
+
+/**
+ * Run main vhost event loop
+ */
+int vhost_run();
