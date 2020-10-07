@@ -19,5 +19,10 @@ $(BINDIR)/%.o: %.c
 $(TARGET): $(BINDIR) $(HDRS) $(OBJS)
 	$(CC) $(LDFLAGS) $(OBJS) $(LIBS) -shared -o $@
 
+server: $(TARGET)
+	$(MAKE) -C server
+
 clean:
 	rm -rf $(BINDIR)
+
+.PHONY: all clean server
