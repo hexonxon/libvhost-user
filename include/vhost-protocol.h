@@ -92,16 +92,21 @@ struct vhost_user_mem_region
     uint64_t mmap_offset;
 };
 
-/**
- * Vhost user message structure as described by the documentation
- */
-struct vhost_user_message
+struct vhost_user_message_header
 {
     uint32_t request;
     uint32_t flags;
 
     /** Size of the contained payload excluding the header */
     uint32_t size;
+};
+
+/**
+ * Vhost user message structure as described by the documentation
+ */
+struct vhost_user_message
+{
+    struct vhost_user_message_header hdr;
 
     union {
 

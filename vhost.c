@@ -104,6 +104,7 @@ static void on_read_avail(struct vhost_dev* dev)
     int res = 0;
     struct vhost_user_message msg;
     int fds[VHOST_USER_MAX_FDS];
+    size_t nfds = 0;
 
     struct iovec iov[1];
     iov[0].iov_base = &msg;
@@ -121,7 +122,7 @@ static void on_read_avail(struct vhost_dev* dev)
     msghdr.msg_controllen = sizeof(u.buf);
 
     res = recvmsg(dev->connfd, &msghdr, MSG_CMSG_CLOEXEC | MSG_DONTWAIT);
-    if (res < 0) {
+    if (res < 0 || res < sizeof(msg.hdr)) {
         /*
          * Master is required to send full messages.
          * We can terminate connection if that is not the case
@@ -130,24 +131,24 @@ static void on_read_avail(struct vhost_dev* dev)
         return;
     }
 
-    fprintf(stdout, "received %d bytes (%zu + %zu)\n", res, sizeof(msg), sizeof(msghdr));
-    assert(res == sizeof(msg) + sizeof(msghdr));
-
     struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msghdr);
-    if (!cmsg ||
-        cmsg->cmsg_level != SOL_SOCKET ||
-        cmsg->cmsg_type != SCM_RIGHTS ||
-        cmsg->cmsg_len > CMSG_LEN(sizeof(fds))) {
-        /*
-         * Master is required to send only a single control header
-         * with auxillary file desciptors.
-         */
-        vhost_reset_dev(dev);
-        return;
+    if (cmsg) {
+        if (cmsg->cmsg_level != SOL_SOCKET ||
+            cmsg->cmsg_type != SCM_RIGHTS ||
+            cmsg->cmsg_len > CMSG_LEN(sizeof(fds))) {
+            /*
+             * Master is required to send only a single control header
+             * with auxillary file desciptors.
+             */
+            vhost_reset_dev(dev);
+            return;
+        }
+
+        nfds = cmsg->cmsg_len / sizeof(*fds);
+        memcpy(fds, CMSG_DATA(cmsg), cmsg->cmsg_len);
     }
 
-    memcpy(fds, CMSG_DATA(cmsg), cmsg->cmsg_len);
-    handle_message(dev, &msg, fds, cmsg->cmsg_len / sizeof(*fds));
+    handle_message(dev, &msg, fds, nfds);
 }
 
 static void send_reply(struct vhost_dev* dev, const struct vhost_user_message* msg)
@@ -265,7 +266,7 @@ static inline bool has_feature(uint64_t features, int fbit)
 static bool message_assumes_reply(const struct vhost_user_message* msg)
 {
     /* Those message types assume a slave reply by default */
-    switch (msg->request) {
+    switch (msg->hdr.request) {
     case VHOST_USER_GET_FEATURES:
     case VHOST_USER_GET_PROTOCOL_FEATURES:
     case VHOST_USER_GET_VRING_BASE:
@@ -285,7 +286,7 @@ static bool must_reply_ack(const struct vhost_dev* dev, const struct vhost_user_
      * then reply is always required.
      */
     return (has_feature(dev->negotiated_protocol_features, VHOST_USER_PROTOCOL_F_REPLY_ACK) &&
-            has_feature(msg->flags, VHOST_USER_PROTOCOL_F_REPLY_ACK));
+            has_feature(msg->hdr.flags, VHOST_USER_PROTOCOL_F_REPLY_ACK));
 }
 
 /*
@@ -450,15 +451,15 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
         NULL, /* VHOST_USER_GET_STATUS           */
     };
 
-    if (msg->request == 0 || msg->request > sizeof(handler_tbl) / sizeof(*handler_tbl)) {
+    if (msg->hdr.request == 0 || msg->hdr.request > sizeof(handler_tbl) / sizeof(*handler_tbl)) {
         goto reset;
     }
 
     int res = 0;
-    if (!handler_tbl[msg->request]) {
+    if (!handler_tbl[msg->hdr.request]) {
         res = ENOTSUP;
     } else {
-        res = handler_tbl[msg->request](dev, msg, fds, nfds);
+        res = handler_tbl[msg->hdr.request](dev, msg, fds, nfds);
     }
 
     if (res < 0) {
