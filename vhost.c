@@ -194,61 +194,58 @@ static void handle_server_event(struct event_cb* cb, int fd, uint32_t events)
     }
 }
 
+static int create_listen_socket(const char* path)
+{
+    int error = 0;
+
+    struct sockaddr_un addr;
+    addr.sun_family = AF_UNIX;
+    if (snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path) > sizeof(addr.sun_path)) {
+        return -ENOSPC;
+    }
+
+    int sockfd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (sockfd < 0) {
+        return -errno;
+    }
+
+    error = bind(sockfd, &addr, sizeof(addr));
+    if (error) {
+        error = -errno;
+        goto error_out;
+    }
+
+    error = listen(sockfd, 1);
+    if (error) {
+        error = -errno;
+        goto error_out;
+    }
+
+    return sockfd;
+
+error_out:
+    close(sockfd);
+    return error;
+}
+
 int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path)
 {
     assert(dev);
     assert(socket_path);
 
-    int error = 0;
-
     memset(dev, 0, sizeof(*dev));
 
-    /*
-     * Create and configure listening socket
-     */
-
-    struct sockaddr_un addr;
-    addr.sun_family = AF_UNIX;
-    if (snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", socket_path) > sizeof(addr.sun_path)) {
-        return -ENOSPC;
-    }
-
-    dev->listenfd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    dev->listenfd = create_listen_socket(socket_path);
     if (dev->listenfd < 0) {
-        return -errno;
+        return -1;
     }
 
-    error = bind(dev->listenfd, &addr, sizeof(addr));
-    if (error) {
-        error = -errno;
-        goto error_out;
-    }
-
-    error = listen(dev->listenfd, 1);
-    if (error) {
-        error = -errno;
-        goto error_out;
-    }
-
-    /*
-     * Register listen socket with the global vhost event loop
-     */
-
+    dev->connfd = -1;
     dev->server_cb = (struct event_cb){ EPOLLIN | EPOLLHUP, dev, handle_server_event };
     vhost_evloop_add_fd(dev->listenfd, &dev->server_cb);
 
-    dev->connfd = -1;
-
-    /*
-     * Insert device into devices list and return
-     */
-
     LIST_INSERT_HEAD(&g_vhost_dev_list, dev, link);
     return 0;
-
-error_out:
-    close(dev->listenfd);
-    return error;
 }
 
 /*
