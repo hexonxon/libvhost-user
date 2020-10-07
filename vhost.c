@@ -151,15 +151,17 @@ static void on_read_avail(struct vhost_dev* dev)
     handle_message(dev, &msg, fds, nfds);
 }
 
-static void send_reply(struct vhost_dev* dev, const struct vhost_user_message* msg)
+static void send_reply(struct vhost_dev* dev, struct vhost_user_message* msg)
 {
     assert(dev);
     assert(msg);
     assert(dev->connfd >= 0);
 
+    msg->hdr.flags |= (1ul << VHOST_USER_MESSAGE_F_REPLY); /* Set reply flag */
+
     struct iovec iov[1];
     iov[0].iov_base = (void*) msg;
-    iov[0].iov_len = sizeof(*msg);
+    iov[0].iov_len = sizeof(msg->hdr) + msg->hdr.size;
 
     struct msghdr msghdr = {0};
     msghdr.msg_iov = iov;
@@ -286,7 +288,7 @@ static bool must_reply_ack(const struct vhost_dev* dev, const struct vhost_user_
      * then reply is always required.
      */
     return (has_feature(dev->negotiated_protocol_features, VHOST_USER_PROTOCOL_F_REPLY_ACK) &&
-            has_feature(msg->hdr.flags, VHOST_USER_PROTOCOL_F_REPLY_ACK));
+            has_feature(msg->hdr.flags, VHOST_USER_MESSAGE_F_REPLY_ACK));
 }
 
 /*
@@ -304,6 +306,7 @@ typedef int (*handler_fptr) (struct vhost_dev*, struct vhost_user_message*, int*
 static int get_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     msg->u64 = VHOST_SUPPORTED_FEATURES;
+    msg->hdr.size = sizeof(msg->u64);
     return 0;
 }
 
@@ -327,6 +330,7 @@ static int get_protocol_features(struct vhost_dev* dev, struct vhost_user_messag
      */
 
     msg->u64 = VHOST_SUPPORTED_PROTOCOL_FEATURES;
+    msg->hdr.size = sizeof(msg->u64);
     return 0;
 }
 
@@ -470,6 +474,7 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
         send_reply(dev, msg);
     } else if (must_reply_ack(dev, msg)) {
         msg->u64 = -res;
+        msg->hdr.size = sizeof(msg->u64);
         send_reply(dev, msg);
     }
 

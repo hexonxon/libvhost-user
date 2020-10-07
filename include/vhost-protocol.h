@@ -75,6 +75,12 @@
 #define VHOST_USER_GET_STATUS               40
 
 /**
+ * Message flags
+ */
+#define VHOST_USER_MESSAGE_F_REPLY          2
+#define VHOST_USER_MESSAGE_F_REPLY_ACK      3
+
+/**
  * Vhost user memory region description
  */
 struct vhost_user_mem_region
@@ -179,4 +185,4 @@ struct vhost_user_message
             uint64_t offset;
         } vring_area;
     };
-};
+} __attribute__((packed));
