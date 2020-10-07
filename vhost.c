@@ -496,7 +496,10 @@ void vhost_reset_dev(struct vhost_dev* dev)
         }
 
         munmap(dev->mapped_regions[i].ptr, dev->mapped_regions[i].mr.size);
+        memset(&dev->mapped_regions[i], 0, sizeof(dev->mapped_regions[i]));
     }
 
-    memset(dev, 0, sizeof(*dev));
+    dev->negotiated_features = 0;
+    dev->negotiated_protocol_features = 0;
+    dev->session_started = false;
 }
