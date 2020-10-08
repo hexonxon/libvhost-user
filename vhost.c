@@ -95,6 +95,7 @@ static void on_connect(struct vhost_dev* dev)
 
 static void on_disconnect(struct vhost_dev* dev)
 {
+    VHOST_LOG_DEBUG("dev %p: client disconnected", dev);
     vhost_reset_dev(dev);
 }
 
@@ -472,18 +473,23 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
         NULL, /* VHOST_USER_GET_STATUS           */
     };
 
+    VHOST_LOG_DEBUG("dev %p: request %u, size %u, flags 0x%x", dev, msg->hdr.request, msg->hdr.size, msg->hdr.flags);
+
     if (msg->hdr.request == 0 || msg->hdr.request > sizeof(handler_tbl) / sizeof(*handler_tbl)) {
+        VHOST_LOG_DEBUG("dev %p: malformed request", dev);
         goto reset;
     }
 
     int res = 0;
     if (!handler_tbl[msg->hdr.request]) {
-        res = ENOTSUP;
+        VHOST_LOG_DEBUG("dev %p: unsupported request", dev);
+        res = -ENOTSUP;
     } else {
         res = handler_tbl[msg->hdr.request](dev, msg, fds, nfds);
     }
 
     if (res < 0) {
+        VHOST_LOG_DEBUG("dev %p: request failed", dev);
         goto reset;
     }
 
