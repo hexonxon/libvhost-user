@@ -48,13 +48,16 @@ struct vhost_dev
     /** We have received VHOST_USER_SET_OWNER */
     bool session_started;
 
+    /** Number of virt queues we support */
+    uint8_t num_queues;
+
     /** Mapped memory regions for this device */
     struct vhost_mapped_region mapped_regions[VHOST_USER_MAX_FDS];
 
     LIST_ENTRY(vhost_dev) link;
 };
 
-int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path);
+int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path, uint8_t num_queues);
 void vhost_reset_dev(struct vhost_dev* dev);
 
 /**

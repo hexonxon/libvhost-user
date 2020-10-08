@@ -254,10 +254,11 @@ error_out:
     return error;
 }
 
-int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path)
+int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path, uint8_t num_queues)
 {
     assert(dev);
     assert(socket_path);
+    assert(num_queues);
 
     memset(dev, 0, sizeof(*dev));
 
@@ -269,6 +270,8 @@ int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path)
     dev->connfd = -1;
     dev->server_cb = (struct event_cb){ EPOLLIN | EPOLLHUP, dev, handle_server_event };
     vhost_evloop_add_fd(dev->listenfd, &dev->server_cb);
+
+    dev->num_queues = num_queues;
 
     LIST_INSERT_HEAD(&g_vhost_dev_list, dev, link);
     return 0;
@@ -292,6 +295,7 @@ static bool message_assumes_reply(const struct vhost_user_message* msg)
     case VHOST_USER_GET_VRING_BASE:
     case VHOST_USER_SET_LOG_BASE:
     case VHOST_USER_GET_INFLIGHT_FD:
+    case VHOST_USER_GET_QUEUE_NUM:
         return true;
     default:
         return false;
@@ -431,6 +435,13 @@ static int set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, 
     return 0;
 }
 
+static int get_queue_num(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+{
+    msg->u64 = dev->num_queues;
+    msg->hdr.size = sizeof(msg->u64);
+    return 0;
+}
+
 static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     assert(dev);
@@ -455,7 +466,7 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
         NULL, /* VHOST_USER_SET_VRING_ERR        */
         get_protocol_features, /* VHOST_USER_GET_PROTOCOL_FEATURES*/
         set_protocol_features, /* VHOST_USER_SET_PROTOCOL_FEATURES*/
-        NULL, /* VHOST_USER_GET_QUEUE_NUM        */
+        get_queue_num,         /* VHOST_USER_GET_QUEUE_NUM        */
         NULL, /* VHOST_USER_SET_VRING_ENABLE     */
         NULL, /* VHOST_USER_SEND_RARP            */
         NULL, /* VHOST_USER_NET_SET_MTU          */

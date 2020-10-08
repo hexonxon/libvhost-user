@@ -37,7 +37,7 @@ int main(int argc, char** argv)
     }
 
     struct vhost_dev dev;
-    error = vhost_register_device_server(&dev, socket_path);
+    error = vhost_register_device_server(&dev, socket_path, 1);
     if (error) {
         DIE("Failed to register device server: %d", error);
     }
