@@ -5,10 +5,16 @@ BINDIR := build-x86
 HDRS := $(wildcard include/*/*.h)
 SRCS := $(wildcard *.c)
 OBJS := $(patsubst %.c,$(BINDIR)/%.o,$(SRCS))
+LIBS := $(BINDIR)/virtio/libvirtqueue.a
 
 TARGET := $(BINDIR)/libvhost.so
 
 all: $(TARGET)
+
+libs:
+	$(MAKE) -C virtio
+
+$(LIBS): libs
 
 $(BINDIR):
 	mkdir -p $@
@@ -16,7 +22,7 @@ $(BINDIR):
 $(BINDIR)/%.o: %.c
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@
 
-$(TARGET): $(BINDIR) $(HDRS) $(OBJS)
+$(TARGET): $(BINDIR) $(HDRS) $(OBJS) $(LIBS)
 	$(CC) $(LDFLAGS) $(OBJS) $(LIBS) -shared -o $@
 
 server: $(TARGET)
@@ -28,4 +34,4 @@ unit-tests: $(TARGET) $(LIBS)
 clean:
 	rm -rf $(BINDIR)
 
-.PHONY: all clean server
+.PHONY: all clean server libs
