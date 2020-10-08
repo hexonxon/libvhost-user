@@ -2,7 +2,6 @@
  * Vhost protocol message handlinh
  */
 
-#include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,7 +46,7 @@ __attribute__((constructor))
 static void libvhost_init(void)
 {
     g_vhost_evloop = evloop_create();
-    assert(g_vhost_evloop);
+    VHOST_VERIFY(g_vhost_evloop);
 }
 
 static void vhost_evloop_add_fd(int fd, struct event_cb* cb)
@@ -73,7 +72,7 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
 
 static void drop_connection(struct vhost_dev* dev)
 {
-    assert(dev->connfd >= 0);
+    VHOST_VERIFY(dev->connfd >= 0);
 
     vhost_evloop_del_fd(dev->connfd);
     close(dev->connfd);
@@ -88,7 +87,7 @@ static void on_connect(struct vhost_dev* dev)
     }
 
     dev->connfd = accept4(dev->listenfd, NULL, NULL, SOCK_CLOEXEC);
-    assert(dev->connfd >= 0);
+    VHOST_VERIFY(dev->connfd >= 0);
 
     vhost_evloop_add_fd(dev->connfd, &dev->server_cb);
 }
@@ -101,7 +100,7 @@ static void on_disconnect(struct vhost_dev* dev)
 
 static void on_read_avail(struct vhost_dev* dev)
 {
-    assert(dev->connfd >= 0);
+    VHOST_VERIFY(dev->connfd >= 0);
 
     int res = 0;
     struct vhost_user_message msg;
@@ -171,9 +170,9 @@ static void on_read_avail(struct vhost_dev* dev)
 
 static void send_reply(struct vhost_dev* dev, struct vhost_user_message* msg)
 {
-    assert(dev);
-    assert(msg);
-    assert(dev->connfd >= 0);
+    VHOST_VERIFY(dev);
+    VHOST_VERIFY(msg);
+    VHOST_VERIFY(dev->connfd >= 0);
 
     msg->hdr.flags |= (1ul << VHOST_USER_MESSAGE_F_REPLY); /* Set reply flag */
 
@@ -195,17 +194,17 @@ static void send_reply(struct vhost_dev* dev, struct vhost_user_message* msg)
 static void handle_server_event(struct event_cb* cb, int fd, uint32_t events)
 {
     struct vhost_dev* dev = cb->ptr;
-    assert(dev);
+    VHOST_VERIFY(dev);
 
     if (fd == dev->listenfd) {
         /* we don't expect EPOLLHUP on a listening socket */
-        assert((events & ~(uint32_t)EPOLLIN) == 0);
+        VHOST_VERIFY((events & ~(uint32_t)EPOLLIN) == 0);
 
         if (events & EPOLLIN) {
             on_connect(dev);
         }
     } else if (fd == dev->connfd) {
-        assert((events & ~(uint32_t)(EPOLLIN | EPOLLHUP | EPOLLERR)) == 0);
+        VHOST_VERIFY((events & ~(uint32_t)(EPOLLIN | EPOLLHUP | EPOLLERR)) == 0);
 
         /* Handler disconnects first */
         if (events & (EPOLLHUP | EPOLLERR)) {
@@ -216,7 +215,7 @@ static void handle_server_event(struct event_cb* cb, int fd, uint32_t events)
             }
         }
     } else {
-        assert(0);
+        VHOST_VERIFY(0);
     }
 }
 
@@ -256,9 +255,9 @@ error_out:
 
 int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path, uint8_t num_queues)
 {
-    assert(dev);
-    assert(socket_path);
-    assert(num_queues);
+    VHOST_VERIFY(dev);
+    VHOST_VERIFY(socket_path);
+    VHOST_VERIFY(num_queues);
 
     memset(dev, 0, sizeof(*dev));
 
@@ -444,9 +443,9 @@ static int get_queue_num(struct vhost_dev* dev, struct vhost_user_message* msg, 
 
 static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
-    assert(dev);
-    assert(msg);
-    assert(fds);
+    VHOST_VERIFY(dev);
+    VHOST_VERIFY(msg);
+    VHOST_VERIFY(fds);
     
     static const handler_fptr handler_tbl[] = {
         NULL,           /* */
