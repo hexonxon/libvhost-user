@@ -17,19 +17,20 @@
 #include <sys/un.h>
 #include <sys/mman.h>
 
+#include "platform.h"
 #include "vhost.h"
 #include "vhost-protocol.h"
 
-#define VHOST_SUPPORTED_FEATURES \
+#define VHOST_SUPPORTED_FEATURES (\
     (1ull << VHOST_USER_F_PROTOCOL_FEATURES) | \
-    0
+    0)
 
-#define VHOST_SUPPORTED_PROTOCOL_FEATURES \
+#define VHOST_SUPPORTED_PROTOCOL_FEATURES (\
     (1ull << VHOST_USER_PROTOCOL_F_MQ) | \
     (1ull << VHOST_USER_PROTOCOL_F_REPLY_ACK) | \
     (1ull << VHOST_USER_PROTOCOL_F_CONFIG) | \
     (1ull << VHOST_USER_PROTOCOL_F_RESET_DEVICE) | \
-    0
+    0)
 
 /* Global device list */
 LIST_HEAD(, vhost_dev) g_vhost_dev_list;
@@ -106,14 +107,18 @@ static void on_read_avail(struct vhost_dev* dev)
     int fds[VHOST_USER_MAX_FDS];
     size_t nfds = 0;
 
-    struct iovec iov[1];
-    iov[0].iov_base = &msg;
-    iov[0].iov_len = sizeof(msg);
-
     union {
         char buf[CMSG_SPACE(sizeof(fds))];
         struct cmsghdr cmsghdr;
     } u;
+
+    /*
+     * Read header and possible control message.
+     */
+
+    struct iovec iov[1];
+    iov[0].iov_base = &msg;
+    iov[0].iov_len = sizeof(msg.hdr);
 
     struct msghdr msghdr = {0};
     msghdr.msg_iov = iov;
@@ -121,8 +126,8 @@ static void on_read_avail(struct vhost_dev* dev)
     msghdr.msg_control = u.buf;
     msghdr.msg_controllen = sizeof(u.buf);
 
-    res = recvmsg(dev->connfd, &msghdr, MSG_CMSG_CLOEXEC | MSG_DONTWAIT);
-    if (res < 0 || res < sizeof(msg.hdr)) {
+    res = recvmsg(dev->connfd, &msghdr, MSG_CMSG_CLOEXEC | MSG_WAITALL);
+    if (res != sizeof(msg.hdr)) {
         /*
          * Master is required to send full messages.
          * We can terminate connection if that is not the case
@@ -146,6 +151,18 @@ static void on_read_avail(struct vhost_dev* dev)
 
         nfds = cmsg->cmsg_len / sizeof(*fds);
         memcpy(fds, CMSG_DATA(cmsg), cmsg->cmsg_len);
+    }
+
+    /*
+     * Recv message body if any
+     */
+
+    if (msg.hdr.size) {
+        res = recv(dev->connfd, (char*)&msg + sizeof(msg.hdr), msg.hdr.size, MSG_WAITALL);
+        if (res != msg.hdr.size) {
+            vhost_reset_dev(dev);
+            return;
+        }
     }
 
     handle_message(dev, &msg, fds, nfds);
