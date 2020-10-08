@@ -6,6 +6,7 @@
 #include <sys/epoll.h>
 #include <sys/queue.h>
 
+#include "platform.h"
 #include "evloop.h"
 
 struct event_ctx
@@ -46,9 +47,7 @@ struct event_loop
 
 struct event_loop* evloop_create(void)
 {
-    struct event_loop* evloop = malloc(sizeof(*evloop));
-    assert(evloop != NULL);
-
+    struct event_loop* evloop = vhost_alloc(sizeof(*evloop));
     evloop->epollfd = epoll_create1(EPOLL_CLOEXEC);
     if (evloop->epollfd == -1) {
         return NULL;
@@ -72,10 +71,10 @@ void evloop_free(struct event_loop* evloop)
     while (!LIST_EMPTY(&evloop->ev_map)) {
         struct event_ctx* pctx = LIST_FIRST(&evloop->ev_map);
         LIST_REMOVE(pctx, link);
-        free(pctx);
+        vhost_free(pctx);
     }
 
-    free(evloop);
+    vhost_free(evloop);
 }
 
 int evloop_add_fd(struct event_loop* evloop, int fd, struct event_cb* cb)
@@ -83,8 +82,7 @@ int evloop_add_fd(struct event_loop* evloop, int fd, struct event_cb* cb)
     assert(evloop);
     assert(cb);
 
-    struct event_ctx* ctx = malloc(sizeof(*ctx));
-    assert(ctx);
+    struct event_ctx* ctx = vhost_alloc(sizeof(*ctx));
     ctx->fd = fd;
     ctx->cb = cb;
 
@@ -94,7 +92,7 @@ int evloop_add_fd(struct event_loop* evloop, int fd, struct event_cb* cb)
 
     int error = epoll_ctl(evloop->epollfd, EPOLL_CTL_ADD, fd, &ev);
     if (error) {
-        free(ctx);
+        vhost_free(ctx);
         return -1;
     }
 
@@ -135,7 +133,7 @@ int evloop_del_fd(struct event_loop* evloop, int fd)
     }
 
     LIST_REMOVE(pctx, link);
-    free(pctx);
+    vhost_free(pctx);
 
     return 0;
 }
