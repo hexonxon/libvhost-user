@@ -330,6 +330,10 @@ static int get_features(struct vhost_dev* dev, struct vhost_user_message* msg, i
 
 static int set_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
+    if (msg->hdr.size < sizeof(msg->u64)) {
+        return -1;
+    }
+
     if (msg->u64 & ~VHOST_SUPPORTED_FEATURES) {
         /* Master lies about features we can support */
         return -1;
@@ -354,6 +358,10 @@ static int get_protocol_features(struct vhost_dev* dev, struct vhost_user_messag
 
 static int set_protocol_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
+    if (msg->hdr.size < sizeof(msg->u64)) {
+        return -1;
+    }
+
     /*
      * Note: VHOST_USER_SET_PROTOCOL_FEATURES can be sent by master even if slave
      *       only advertised but not yet negotiated VHOST_USER_F_PROTOCOL_FEATURES,
