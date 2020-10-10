@@ -20,7 +20,7 @@ $(TARGET): $(BINDIR) $(HDRS) $(OBJS)
 	$(CC) $(LDFLAGS) $(OBJS) $(LIBS) -shared -o $@
 
 server: $(TARGET)
-	$(MAKE) -C server
+	$(MAKE) -C tools/server
 
 clean:
 	rm -rf $(BINDIR)
