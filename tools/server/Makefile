@@ -1,6 +1,8 @@
-include ../../Makefile.common
+ROOT_DIR := $(abspath $(CURDIR)/../..)
 
-BINDIR := $(abspath ../../build-x86/tools/server)
+include $(ROOT_DIR)/Makefile.common
+
+BINDIR := $(ROOT_DIR)/build-x86/tools/server
 TARGET := $(BINDIR)/vhost-server
 OBJS := $(patsubst %.c, $(BINDIR)/%.o, $(wildcard *.c))
 
@@ -10,10 +12,10 @@ $(BINDIR):
 	mkdir -p $@
 
 $(BINDIR)/%.o: %.c
-	$(CC) $(CFLAGS) -I../../include -c $< -o $@
+	$(CC) $(CFLAGS) -I$(ROOT_DIR)/include -c $< -o $@
 
 $(TARGET): $(BINDIR) $(OBJS)
-	$(CC) $(LDFLAGS) $(OBJS) -Wl,-rpath=$(BINDIR)/../../ -L$(BINDIR)/../../ -lvhost -o $@
+	$(CC) $(LDFLAGS) $(OBJS) -Wl,-rpath=$(ROOT_DIR)/build-x86 -L$(ROOT_DIR)/build-x86 -lvhost -o $@
 
 clean:
 	rm -rf $(TARGET) $(OBJS)
