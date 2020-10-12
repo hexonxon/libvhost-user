@@ -22,6 +22,9 @@ $(TARGET): $(BINDIR) $(HDRS) $(OBJS)
 server: $(TARGET)
 	$(MAKE) -C tools/server
 
+unit-tests: $(TARGET) $(LIBS)
+	$(MAKE) -C tests
+
 clean:
 	rm -rf $(BINDIR)
 
