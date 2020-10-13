@@ -181,6 +181,14 @@ bool virtqueue_next_buffer(struct virtqueue_desc_chain* iter, struct virtqueue_b
         goto mark_broken;
     }
 
+    /*
+     * Spec does not say anything about how we should treat 0-length descriptors.
+     * We choose to break things immediately.
+     */
+    if (pcur->len == 0) {
+        goto mark_broken;
+    }
+
     /* On x86 things cannot be write-only, so we have to ignore the exact virtio definition here */
     buf->ro = ((pcur->flags & VIRTQ_DESC_F_WRITE) == 0);
     buf->ptr = host_address(pcur->addr);

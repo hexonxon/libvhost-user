@@ -127,7 +127,7 @@ static void dequeue_test(void)
     for (uint16_t i = 0; i < qsize; ++i) {
         /* Index descriptors in reverse to make things more interesting */
         uint16_t id = qsize - i - 1;
-        chain[i] = vq_fill_desc_id(&vq, id, (void*)(uintptr_t) (i * 0x1000), i * 0x10, VIRTQ_DESC_F_NEXT, id - 1);
+        chain[i] = vq_fill_desc_id(&vq, id, (void*)(uintptr_t) (i * 0x1000), 0x10, VIRTQ_DESC_F_NEXT, id - 1);
     };
 
     /* Patch last descriptor's next flag */
@@ -172,7 +172,7 @@ static void dequeue_indirect_test(void)
             next = id - 1;
         }
 
-        vq_fill_desc(&itbl[id], (void*)(uintptr_t) (i * 0x1000), i * 0x10, VIRTQ_DESC_F_NEXT, next);
+        vq_fill_desc(&itbl[id], (void*)(uintptr_t) (i * 0x1000), 0x10, VIRTQ_DESC_F_NEXT, next);
         chain[i] = &itbl[id];
     };
 
@@ -213,13 +213,13 @@ static void dequeue_combined_test(void)
 
     uint16_t id = 0;
     for (; id < qsize_half - 1; ++id) {
-        chain[id] = vq_fill_desc_id(&vq, id, (void*)(uintptr_t)(id * 0x1000), id * 0x10, VIRTQ_DESC_F_NEXT, id + 1);
+        chain[id] = vq_fill_desc_id(&vq, id, (void*)(uintptr_t)(id * 0x1000), 0x10, VIRTQ_DESC_F_NEXT, id + 1);
     }
 
     vq_fill_desc_id(&vq, qsize_half - 1, itbl, sizeof(itbl), VIRTQ_DESC_F_INDIRECT, 0);
 
     for (uint16_t i = 0; i < qsize_half; ++i, ++id) {
-        vq_fill_desc(&itbl[i], (void*)(uintptr_t)(id * 0x1000), id * 0x10, VIRTQ_DESC_F_NEXT, i + 1);
+        vq_fill_desc(&itbl[i], (void*)(uintptr_t)(id * 0x1000), 0x10, VIRTQ_DESC_F_NEXT, i + 1);
         chain[id] = &itbl[i];
     }
 
@@ -251,7 +251,7 @@ static void dequeue_many_test(void)
 
     struct virtq_desc* chain[qsize];
     for (uint16_t i = 0; i < qsize; ++i) {
-        chain[i] = vq_fill_desc_id(&vq, i, (void*)(uintptr_t)(i * 0x1000), i * 0x10, 0, i + 1);
+        chain[i] = vq_fill_desc_id(&vq, i, (void*)(uintptr_t)(i * 0x1000), 0x10, 0, i + 1);
         vq_publish_desc_id(&vq, i);
     }
 
@@ -283,7 +283,7 @@ static void dequeue_many_indirect_test(void)
     struct virtq_desc itbl[chain_len];
     struct virtq_desc* chain[chain_len];
     for (uint16_t i = 0; i < chain_len; ++i) {
-        vq_fill_desc(&itbl[i], (void*)(uintptr_t)(i * 0x1000), i * 0x10, VIRTQ_DESC_F_NEXT, i + 1);
+        vq_fill_desc(&itbl[i], (void*)(uintptr_t)(i * 0x1000), 0x10, VIRTQ_DESC_F_NEXT, i + 1);
         chain[i] = &itbl[i];
     }
 
@@ -550,6 +550,42 @@ static void ignore_write_only_for_indirect_descriptor_test(void)
     free(mem);
 }
 
+/* Attempt to dequeue a zero-length descriptor */
+static void zero_length_descriptor_test(void)
+{
+    const uint16_t qsize = 1024;
+
+    struct virtqueue vq;
+    void* mem = vq_alloc(qsize, &vq);
+
+    vq_fill_desc_id(&vq, 0, (void*) 0x1000, 0, VIRTQ_DESC_F_WRITE, 0);
+    vq_publish_desc_id(&vq, 0);
+
+    vq_dequeue_and_walk(&vq, 0);
+    CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
+
+    free(mem);
+}
+
+/* Attempt to dequeue a zero-length indirect descriptor */
+static void zero_length_indirect_descriptor_test(void)
+{
+    const uint16_t qsize = 1024;
+
+    struct virtqueue vq;
+    void* mem = vq_alloc(qsize, &vq);
+
+    struct virtq_desc itbl[1];
+    vq_fill_desc(&itbl[0], (void*) 0x1000, 0, 0, 0);
+    vq_fill_desc_id(&vq, 0, itbl, sizeof(itbl), VIRTQ_DESC_F_INDIRECT, 0);
+    vq_publish_desc_id(&vq, 0);
+
+    vq_dequeue_and_walk(&vq, 0);
+    CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
+
+    free(mem);
+}
+
 int main(int argc, char** argv)
 {
     if (CUE_SUCCESS != CU_initialize_registry()) {
@@ -580,6 +616,8 @@ int main(int argc, char** argv)
     CU_add_test(suite, "descriptor_loop_test", descriptor_loop_test);
     CU_add_test(suite, "indirect_descriptor_loop_test", indirect_descriptor_loop_test);
     CU_add_test(suite, "ignore_write_only_for_indirect_descriptor_test", ignore_write_only_for_indirect_descriptor_test);
+    CU_add_test(suite, "zero_length_descriptor_test", zero_length_descriptor_test);
+    CU_add_test(suite, "zero_length_indirect_descriptor_test", zero_length_indirect_descriptor_test);
 
     /* run tests */
     CU_basic_set_mode(CU_BRM_VERBOSE);
