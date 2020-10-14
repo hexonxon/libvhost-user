@@ -40,7 +40,7 @@ struct virtio_memory_map
 /**
  * Initializer for empty memory map
  */
-#define VIRTIO_INIT_MEMORY_MAP { .num_regions = 0, .regions = {0} }
+#define VIRTIO_INIT_MEMORY_MAP ((struct virtio_memory_map) {.num_regions = 0, .regions = {0}})
 
 /**
  * Insert a new region into the map

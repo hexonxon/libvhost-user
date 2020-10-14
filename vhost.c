@@ -410,28 +410,34 @@ static int set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, 
 
         /* Zero-sized regions look fishy */
         if (mr->size == 0) {
-            return -1;
+            goto reset_dev;
         }
 
         /* We assume regions to be at least page-aligned */
         if ((mr->guest_addr & (PAGE_SIZE - 1)) ||
             (mr->size & (PAGE_SIZE - 1)) ||
             ((mr->user_addr + mr->mmap_offset) & (PAGE_SIZE - 1))) {
-            return -1;
+            goto reset_dev;
         }
 
         void* ptr = mmap(NULL, mr->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, mr->mmap_offset);
         if (ptr == MAP_FAILED) {
-            /* device reset will handle unmapping if anything that was mapped */
-            return -1;
+            goto reset_dev;
         }
 
-        dev->mapped_regions[i].fd = fd;
-        dev->mapped_regions[i].ptr = ptr;
-        dev->mapped_regions[i].mr = *mr;
+        int error = virtio_add_guest_region(&dev->memory_map, mr->guest_addr, mr->size, ptr, false);
+        if (error) {
+            goto reset_dev;
+        }
+
+        close(fd);
     }
 
     return 0;
+
+reset_dev:
+    /* device reset will handle unmapping if anything that was potentially mapped */
+    return -1;
 }
 
 static int get_queue_num(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
@@ -531,15 +537,11 @@ void vhost_reset_dev(struct vhost_dev* dev)
     drop_connection(dev);
 
     /* Unmap mapped regions */
-    for (size_t i = 0; i < VHOST_USER_MAX_FDS; ++i) {
-        if (dev->mapped_regions[i].ptr == NULL) {
-            break;
-        }
-
-        munmap(dev->mapped_regions[i].ptr, dev->mapped_regions[i].mr.size);
-        memset(&dev->mapped_regions[i], 0, sizeof(dev->mapped_regions[i]));
+    for (size_t i = 0; i < dev->memory_map.num_regions; ++i) {
+        munmap(dev->memory_map.regions[i].hva, dev->memory_map.regions[i].len);
     }
 
+    dev->memory_map = VIRTIO_INIT_MEMORY_MAP;
     dev->negotiated_features = 0;
     dev->negotiated_protocol_features = 0;
     dev->session_started = false;

@@ -7,24 +7,11 @@
 #include "evloop.h"
 #include "vhost-protocol.h"
 
+#include "virtio/memory.h"
+
 #define PAGE_SIZE 4096ull
 
 struct vhost_user_message;
-
-/**
- * Mapped memory region shared with us by the master.
- */
-struct vhost_mapped_region
-{
-    /** mmap fd */
-    int fd;
-
-    /** mapped host ptr */
-    void* ptr;
-
-    /** region description provided by VHOST_USER_SET_MEM_TABLE */
-    struct vhost_user_mem_region mr;
-};
 
 /**
  * Vhost device.
@@ -52,7 +39,7 @@ struct vhost_dev
     uint8_t num_queues;
 
     /** Mapped memory regions for this device */
-    struct vhost_mapped_region mapped_regions[VHOST_USER_MAX_FDS];
+    struct virtio_memory_map memory_map;
 
     LIST_ENTRY(vhost_dev) link;
 };
