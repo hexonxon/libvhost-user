@@ -3,7 +3,7 @@ BINDIR := $(ROOTDIR)/build-x86/tests/virtio
 
 include $(ROOTDIR)/Makefile.common
 
-SRCS := $(wildcard unit_*.c)
+SRCS := $(sort $(wildcard unit_*.c))
 OBJS := $(patsubst %.c, $(BINDIR)/%.o, $(SRCS))
 TESTS := $(patsubst %.c, $(BINDIR)/%, $(SRCS))
 
