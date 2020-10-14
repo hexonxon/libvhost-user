@@ -591,6 +591,61 @@ static void zero_length_indirect_descriptor_test(void)
     free(mem);
 }
 
+/* There is a descriptor buffer that crosses into RO guest region */
+static void buffer_crosses_ro_boundary_test(void)
+{
+    const uint16_t qsize = 1024;
+
+    struct virtio_memory_map map = VIRTIO_INIT_MEMORY_MAP;
+    CU_ASSERT_TRUE(0 == virtio_add_guest_region(&map, 0x1000, 0x1000, (void*) 0x1000, false));
+    CU_ASSERT_TRUE(0 == virtio_add_guest_region(&map, 0x2000, 0x1000, (void*) 0x2000, true));
+
+    struct virtqueue vq;
+    void* mem = vq_alloc(qsize, &map, &vq);
+    vq_fill_desc_id(&vq, 0, (void*) 0x1000, 0x2000, VIRTQ_DESC_F_WRITE, 0);
+    vq_publish_desc_id(&vq, 0);
+
+    vq_dequeue_and_walk(&vq, 0);
+    CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
+
+    free(mem);
+}
+
+/* Indirect descriptor table buffer is not mapped in guest memory */
+static void unmapped_indirect_table_test(void)
+{
+    const uint16_t qsize = 1024;
+
+    struct virtio_memory_map map = VIRTIO_INIT_MEMORY_MAP;
+    CU_ASSERT_TRUE(0 == virtio_add_guest_region(&map, 0x0, 0x1000, 0x0, true));
+
+    struct virtqueue vq;
+    void* mem = vq_alloc(qsize, &map, &vq);
+
+    /* Build a good indirect desc table to differentiate between mapping and contents error */
+    struct virtq_desc itbl[1];
+    vq_fill_desc(&itbl[0], 0x0, 0x1000, 0, 0);
+
+    /*
+     * Since fake memory map describes only first physical page as mapped,
+     * we can be pretty sure that itbl variable does not cover it.
+     */
+    CU_ASSERT_FATAL(MAP_FAILED == virtio_find_gpa_range(&map, (uintptr_t)itbl, sizeof(itbl), true));
+    /*
+     * The buffer that indirect table descriptor points to should instead be valid
+     * to differentiate between mapping and contents error.
+     */
+    CU_ASSERT_FATAL(MAP_FAILED != virtio_find_gpa_range(&map, itbl[0].addr, itbl[0].len, true));
+
+    vq_fill_desc_id(&vq, 0, (void*) itbl, 0x1000, VIRTQ_DESC_F_WRITE, 0);
+    vq_publish_desc_id(&vq, 0);
+
+    vq_dequeue_and_walk(&vq, 0);
+    CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
+
+    free(mem);
+}
+
 int main(int argc, char** argv)
 {
     if (CUE_SUCCESS != CU_initialize_registry()) {
@@ -623,6 +678,9 @@ int main(int argc, char** argv)
     CU_add_test(suite, "ignore_write_only_for_indirect_descriptor_test", ignore_write_only_for_indirect_descriptor_test);
     CU_add_test(suite, "zero_length_descriptor_test", zero_length_descriptor_test);
     CU_add_test(suite, "zero_length_indirect_descriptor_test", zero_length_indirect_descriptor_test);
+
+    CU_add_test(suite, "buffer_crosses_ro_boundary_test", buffer_crosses_ro_boundary_test);
+    CU_add_test(suite, "unmapped_indirect_table_test", unmapped_indirect_table_test);
 
     /* run tests */
     CU_basic_set_mode(CU_BRM_VERBOSE);
