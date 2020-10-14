@@ -105,7 +105,6 @@ static void on_read_avail(struct vhost_dev* dev)
     int res = 0;
     struct vhost_user_message msg;
     int fds[VHOST_USER_MAX_FDS];
-    size_t nfds = 0;
 
     union {
         char buf[CMSG_SPACE(sizeof(fds))];
@@ -149,8 +148,11 @@ static void on_read_avail(struct vhost_dev* dev)
             return;
         }
 
-        nfds = cmsg->cmsg_len / sizeof(*fds);
-        memcpy(fds, CMSG_DATA(cmsg), cmsg->cmsg_len);
+        /*
+         * We have enough space in aux buffer to copy maximum number of descriptors
+         * since we can't actually know from the cmsg header itself how much there is (portably).
+         */
+        memcpy(fds, CMSG_DATA(cmsg), sizeof(fds));
     }
 
     /*
@@ -165,7 +167,7 @@ static void on_read_avail(struct vhost_dev* dev)
         }
     }
 
-    handle_message(dev, &msg, fds, nfds);
+    handle_message(dev, &msg, fds, VHOST_USER_MAX_FDS);
 }
 
 static void send_reply(struct vhost_dev* dev, struct vhost_user_message* msg)
@@ -399,12 +401,11 @@ static int reset_owner(struct vhost_dev* dev, struct vhost_user_message* msg, in
 
 static int set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
-    if (msg->mem_regions.num_regions >= VHOST_USER_MAX_FDS ||
-        msg->mem_regions.num_regions != nfds) {
+    if (msg->mem_regions.num_regions > VHOST_USER_MAX_FDS) {
         return -1;
     }
 
-    for (size_t i = 0; i < nfds; ++i) {
+    for (size_t i = 0; i < msg->mem_regions.num_regions; ++i) {
         struct vhost_user_mem_region* mr = &msg->mem_regions.regions[i];
         int fd = fds[i];
 
