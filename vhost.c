@@ -487,6 +487,52 @@ static int get_config(struct vhost_dev* dev, struct vhost_user_message* msg, int
     return 0;
 }
 
+enum {
+    VRING_FD_KICK,
+    VRING_FD_CALL,
+    VRING_FD_ERR
+};
+
+static int set_vring_fd(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds, int fdtype)
+{
+    if (msg->hdr.size < sizeof(msg->u64)) {
+        return -1;
+    }
+
+    uint8_t vring_idx = msg->u64 & 0xFF;
+    bool invalid_fd = (msg->u64 & (1ul << 8)) != 0;
+
+    if (vring_idx >= dev->num_queues) {
+        return -1;
+    }
+
+    int* fd;
+    switch (fdtype) {
+    case VRING_FD_KICK: fd = &dev->vrings[vring_idx].kickfd; break;
+    case VRING_FD_CALL: fd = &dev->vrings[vring_idx].callfd; break;
+    case VRING_FD_ERR: fd = &dev->vrings[vring_idx].errfd; break;
+    default: VHOST_VERIFY(0);
+    };
+
+    *fd = (invalid_fd ? -1 : fds[0]);
+    return 0;
+}
+
+static int set_vring_kick(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+{
+    return set_vring_fd(dev, msg, fds, nfds, VRING_FD_KICK);
+}
+
+static int set_vring_call(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+{
+    return set_vring_fd(dev, msg, fds, nfds, VRING_FD_CALL);
+}
+
+static int set_vring_err(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+{
+    return set_vring_fd(dev, msg, fds, nfds, VRING_FD_ERR);
+}
+
 static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     VHOST_VERIFY(dev);
@@ -506,9 +552,9 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
         NULL, /* VHOST_USER_SET_VRING_ADDR       */
         NULL, /* VHOST_USER_SET_VRING_BASE       */
         NULL, /* VHOST_USER_GET_VRING_BASE       */
-        NULL, /* VHOST_USER_SET_VRING_KICK       */
-        NULL, /* VHOST_USER_SET_VRING_CALL       */
-        NULL, /* VHOST_USER_SET_VRING_ERR        */
+        set_vring_kick, /* VHOST_USER_SET_VRING_KICK       */
+        set_vring_call, /* VHOST_USER_SET_VRING_CALL       */
+        set_vring_err,  /* VHOST_USER_SET_VRING_ERR        */
         get_protocol_features, /* VHOST_USER_GET_PROTOCOL_FEATURES*/
         set_protocol_features, /* VHOST_USER_SET_PROTOCOL_FEATURES*/
         get_queue_num,         /* VHOST_USER_GET_QUEUE_NUM        */
