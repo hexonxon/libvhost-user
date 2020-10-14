@@ -5,8 +5,6 @@
 
 #include "virtio/virtio10.h"
 
-extern void* host_address(uint64_t gpa);
-
 /**
  * Buffer described by a virtq descriptor and mapped to host address space.
  */
@@ -66,6 +64,9 @@ void virtqueue_release_buffers(struct virtqueue_desc_chain* iter, uint32_t bytes
  */
 struct virtqueue
 {
+    /** Mapped guest memory available for this virtqueue */
+    struct virtio_memory_map* mem;
+
     /**
      * These point directly to virtq memory
      */
@@ -86,7 +87,7 @@ struct virtqueue
 /**
  * Init virtqueue from mapped memory
  */
-int virtqueue_init(struct virtqueue* vq, void* base, uint16_t size);
+int virtqueue_init(struct virtqueue* vq, void* base, uint16_t size, struct virtio_memory_map* mem);
 
 /**
  * Dequeue next buffer chain from the queue.

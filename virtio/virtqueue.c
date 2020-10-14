@@ -1,10 +1,13 @@
 #include "platform.h"
+
+#include "virtio/memory.h"
 #include "virtio/virtqueue.h"
 
-int virtqueue_init(struct virtqueue* vq, void* base, uint16_t qsize)
+int virtqueue_init(struct virtqueue* vq, void* base, uint16_t qsize, struct virtio_memory_map* mem)
 {
     VHOST_VERIFY(vq);
     VHOST_VERIFY(base);
+    VHOST_VERIFY(mem);
 
     /*
      * 2.4 Virtqueues: "Queue size is always a power of 2"
@@ -49,6 +52,7 @@ int virtqueue_init(struct virtqueue* vq, void* base, uint16_t qsize)
     vq->qsize = qsize;
     vq->last_seen_avail = 0;
     vq->is_broken = false;
+    vq->mem = mem;
 
     return 0;
 }
@@ -61,6 +65,13 @@ static inline void mark_broken(struct virtqueue* vq)
 bool virtqueue_is_broken(struct virtqueue* vq)
 {
     return vq->is_broken;
+}
+
+/* Find mapped address of a buffer described by desc within vq's memory map.
+ * Not that on failure we return MAP_FAILED and not NULL */
+static void* map_buffer(struct virtqueue* vq, const struct virtq_desc* desc)
+{
+    return virtio_find_gpa_range(vq->mem, desc->addr, desc->len, (desc->flags & VIRTQ_DESC_F_WRITE) == 0);
 }
 
 static inline uint16_t get_index(const struct virtqueue* vq, uint16_t idx)
@@ -160,9 +171,14 @@ bool virtqueue_next_buffer(struct virtqueue_desc_chain* iter, struct virtqueue_b
             goto mark_broken;
         }
 
+        void* hva = map_buffer(iter->vq, pcur);
+        if (hva == MAP_FAILED) {
+            goto mark_broken;
+        }
+
         /* Continue the chain inside indirect decriptor table */
         iter->is_indirect = true;
-        iter->ptbl = host_address(pcur->addr);
+        iter->ptbl = hva;
         iter->tbl_size = pcur->len / sizeof(*pcur);
         iter->cur = 0;
         iter->nseen++;
@@ -189,9 +205,14 @@ bool virtqueue_next_buffer(struct virtqueue_desc_chain* iter, struct virtqueue_b
         goto mark_broken;
     }
 
+    void* hva = map_buffer(iter->vq, pcur);
+    if (hva == MAP_FAILED) {
+        goto mark_broken;
+    }
+
     /* On x86 things cannot be write-only, so we have to ignore the exact virtio definition here */
     buf->ro = ((pcur->flags & VIRTQ_DESC_F_WRITE) == 0);
-    buf->ptr = host_address(pcur->addr);
+    buf->ptr = hva;
     buf->len = pcur->len;
 
     if (pcur->flags & VIRTQ_DESC_F_NEXT) {

@@ -9,15 +9,19 @@
 #include <CUnit/CUnit.h>
 
 #include "virtio/virtqueue.h"
+#include "virtio/memory.h"
 
-/* A stub for libvirtqueue to map "guest memory" (which is just the same address space in test) */
-void* host_address(uint64_t gpa)
-{
-    return (void*)(uintptr_t)gpa;
-}
+/* Default memory map just allows the entire address space for rw access.
+ * Specific tests might use something more restictive. */
+static struct virtio_memory_map g_default_memory_map = {
+    .num_regions = 1,
+    .regions = {
+        { 0, UINTPTR_MAX, NULL, false },
+    },
+};
 
 /* Allocate memory to hold a queue of qsize descriptors and init a virtqueue on top of it */
-static void* vq_alloc(uint16_t qsize, struct virtqueue* vq)
+static void* vq_alloc(uint16_t qsize, struct virtio_memory_map* mem, struct virtqueue* vq)
 {
     size_t size_bytes = virtq_size(qsize);
 
@@ -25,7 +29,7 @@ static void* vq_alloc(uint16_t qsize, struct virtqueue* vq)
     CU_ASSERT(queue_mem != NULL);
     memset(queue_mem, 0, size_bytes);
 
-    int res = virtqueue_init(vq, queue_mem, qsize);
+    int res = virtqueue_init(vq, queue_mem, qsize, mem);
     CU_ASSERT(res == 0);
 
     return queue_mem;
@@ -98,7 +102,7 @@ static void init_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* qdata = vq_alloc(qsize, &vq);
+    void* qdata = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     /* Check parsed queue layout after init */
     CU_ASSERT_EQUAL(vq.desc, qdata);
@@ -117,7 +121,7 @@ static void dequeue_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     /*
      * Push a chain of direct descriptors of max length.
@@ -150,7 +154,7 @@ static void dequeue_indirect_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     /*
      * Create a table with qsize - 1 indirect descriptors and push 1 direct one to describe it.
@@ -199,7 +203,7 @@ static void dequeue_combined_test(void)
     const uint16_t qsize_half = qsize >> 1;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     /*
      * Maximum combined chain length is still qsize, according to virtio spec.
@@ -243,7 +247,7 @@ static void dequeue_many_test(void)
     const uint16_t qsize = VIRTQ_MAX_SIZE;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     /*
      * Fill the queue with directs descriptor chains of length 1
@@ -273,7 +277,7 @@ static void dequeue_many_indirect_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     /*
      * Fill the queue with descriptors pointing to the same indirect table.
@@ -316,12 +320,13 @@ static void init_negative_test(void)
     struct virtqueue vq;
 
     /* invalid qsize */
-    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem, 0));
-    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem, VIRTQ_MAX_SIZE + 1));
-    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem, VIRTQ_MAX_SIZE - 1 /* Within limits but not a power-of-2 */));
+    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem, 0, &g_default_memory_map));
+    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem, VIRTQ_MAX_SIZE + 1, &g_default_memory_map));
+    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem, VIRTQ_MAX_SIZE - 1 /* Within limits but not a power-of-2 */,
+                                       &g_default_memory_map));
 
     /* base memory not aligned */
-    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem + 1, VIRTQ_MAX_SIZE));
+    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem + 1, VIRTQ_MAX_SIZE, &g_default_memory_map));
 
     free(mem);
 }
@@ -332,7 +337,7 @@ static void dequeue_empty_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     struct virtqueue_desc_chain iter;
     CU_ASSERT_FALSE(virtqueue_dequeue(&vq, &iter));
@@ -347,7 +352,7 @@ static void descriptor_chain_too_long_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     /*
      * To actually have a chain long enough we have to use indirect descriptors
@@ -378,7 +383,7 @@ static void several_indirect_descriptors_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     struct virtq_desc itbl[1];
     vq_fill_desc(&itbl[0], (void*)0x1000, 0x10, 0, 0);
@@ -402,7 +407,7 @@ static void empty_indirect_table_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     struct virtq_desc itbl[1];
     vq_fill_desc_id(&vq, 0, itbl, sizeof(struct virtq_desc) - 1 /* Empty */, VIRTQ_DESC_F_INDIRECT, 0);
@@ -421,7 +426,7 @@ static void invalid_next_descriptor_id(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     vq_fill_desc_id(&vq, 0, (void*) 0x1000, 0x10, VIRTQ_DESC_F_NEXT, qsize);
     vq_publish_desc_id(&vq, 0);
@@ -438,7 +443,7 @@ static void invalid_next_indirect_descriptor_id(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     struct virtq_desc itbl[1];
     vq_fill_desc(&itbl[0], (void*) 0x1000, 0x10, VIRTQ_DESC_F_NEXT, sizeof(itbl) / sizeof(itbl));
@@ -458,7 +463,7 @@ static void nested_indirect_descriptor_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     struct virtq_desc itbl[1];
     vq_fill_desc(&itbl[0], (void*) 0x1000, 0x10, VIRTQ_DESC_F_INDIRECT, 0);
@@ -477,7 +482,7 @@ static void descriptor_loop_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     vq_fill_desc_id(&vq, 0, (void*) 0x1000, 0x10, VIRTQ_DESC_F_NEXT, 1);
     vq_fill_desc_id(&vq, 1, (void*) 0x2000, 0x20, VIRTQ_DESC_F_NEXT, 0);
@@ -503,7 +508,7 @@ static void indirect_descriptor_loop_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     struct virtq_desc itbl[2];
     vq_fill_desc(&itbl[0], (void*) 0x1000, 0x10, VIRTQ_DESC_F_NEXT, 1);
@@ -536,7 +541,7 @@ static void ignore_write_only_for_indirect_descriptor_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     struct virtq_desc itbl[1];
     vq_fill_desc(&itbl[0], (void*) 0x1000, 0x10, 0, 0);
@@ -556,7 +561,7 @@ static void zero_length_descriptor_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     vq_fill_desc_id(&vq, 0, (void*) 0x1000, 0, VIRTQ_DESC_F_WRITE, 0);
     vq_publish_desc_id(&vq, 0);
@@ -573,7 +578,7 @@ static void zero_length_indirect_descriptor_test(void)
     const uint16_t qsize = 1024;
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &vq);
+    void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
     struct virtq_desc itbl[1];
     vq_fill_desc(&itbl[0], (void*) 0x1000, 0, 0, 0);
