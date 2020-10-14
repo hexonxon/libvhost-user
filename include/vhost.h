@@ -14,6 +14,30 @@
 struct vhost_user_message;
 
 /**
+ * Vring is a vhost name for a virtio virtqueue over shared guest memory
+ * and its associated vhost context.
+ */
+struct vring
+{
+    /** Owning device */
+    struct vhost_dev* dev;
+
+    /** Event fd we wait on for available buffers */
+    int kickfd;
+
+    /** Event fd we use to signal used buffers */
+    int callfd;
+
+    /** Event fd we use to signal errors */
+    int errfd;
+};
+
+/**
+ * Reset vring to default state
+ */
+void vring_reset(struct vring* vring);
+
+/**
  * Vhost device.
  * Basic vhost slave per-device context independent of the actual device type.
  */
@@ -37,6 +61,9 @@ struct vhost_dev
 
     /** Number of virt queues we support */
     uint8_t num_queues;
+
+    /** Array of vrings for this device, num_queues total */
+    struct vring* vrings;
 
     /** Mapped memory regions for this device */
     struct virtio_memory_map memory_map;

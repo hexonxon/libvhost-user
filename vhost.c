@@ -273,9 +273,27 @@ int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path,
     vhost_evloop_add_fd(dev->listenfd, &dev->server_cb);
 
     dev->num_queues = num_queues;
+    dev->vrings = vhost_calloc(num_queues, sizeof(*dev->vrings));
+    for (uint8_t i = 0; i < num_queues; ++i) {
+        dev->vrings[i].dev = dev;
+        vring_reset(dev->vrings + i);
+    }
 
     LIST_INSERT_HEAD(&g_vhost_dev_list, dev, link);
     return 0;
+}
+
+/*
+ * Vrings
+ */
+
+void vring_reset(struct vring* vring)
+{
+    VHOST_VERIFY(vring);
+
+    vring->kickfd = -1;
+    vring->callfd = -1;
+    vring->errfd = -1;
 }
 
 /*
@@ -555,12 +573,19 @@ reset:
 
 void vhost_reset_dev(struct vhost_dev* dev)
 {
+    VHOST_VERIFY(dev);
+
     /* Drop client connection */
     drop_connection(dev);
 
     /* Unmap mapped regions */
     for (size_t i = 0; i < dev->memory_map.num_regions; ++i) {
         munmap(dev->memory_map.regions[i].hva, dev->memory_map.regions[i].len);
+    }
+
+    /* Reset vrings */
+    for (uint8_t i = 0; i < dev->num_queues; ++i) {
+        vring_reset(dev->vrings + i);
     }
 
     dev->memory_map = VIRTIO_INIT_MEMORY_MAP;
