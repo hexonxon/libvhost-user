@@ -8,9 +8,7 @@ OBJS := $(patsubst %.c, $(BINDIR)/%.o, $(SRCS))
 TESTS := $(patsubst %.c, $(BINDIR)/%, $(SRCS))
 
 all: $(TESTS)
-	for t in $(TESTS); do \
-		$$t; \
-	done
+	for t in $(TESTS); do $$t || exit 1; done
 
 $(TESTS): $(BINDIR)
 
