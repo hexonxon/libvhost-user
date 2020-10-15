@@ -176,7 +176,7 @@ static void send_reply(struct vhost_dev* dev, struct vhost_user_message* msg)
     VHOST_VERIFY(msg);
     VHOST_VERIFY(dev->connfd >= 0);
 
-    msg->hdr.flags |= (1ul << VHOST_USER_MESSAGE_F_REPLY); /* Set reply flag */
+    msg->hdr.flags = 0x1 | (1ul << VHOST_USER_MESSAGE_F_REPLY); /* Set reply flag */
 
     struct iovec iov[1];
     iov[0].iov_base = (void*) msg;
