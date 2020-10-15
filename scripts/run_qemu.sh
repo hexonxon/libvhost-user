@@ -9,6 +9,8 @@ $QEMU \
     -machine pc,accel=kvm \
     -cpu host \
     -m 512 \
+    -object memory-backend-file,id=mem0,size=512M,mem-path=/dev/shm/vhost,share=on \
+    -numa node,memdev=mem0 \
     -smp 2 \
     -display none \
     -chardev socket,id=char0,reconnect=1,path=$VHOST_SOCK \
