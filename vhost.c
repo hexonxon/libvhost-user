@@ -551,6 +551,20 @@ static int set_vring_num(struct vhost_dev* dev, struct vhost_user_message* msg, 
     return 0;
 }
 
+static int set_vring_base(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+{
+    if (msg->hdr.size < sizeof(msg->vring_state)) {
+        return -1;
+    }
+
+    if (msg->vring_state.index > dev->num_queues) {
+        return -1;
+    }
+
+    dev->vrings[msg->vring_state.index].avail_base = msg->vring_state.num;
+    return 0;
+}
+
 static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     VHOST_VERIFY(dev);
@@ -568,7 +582,7 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
         NULL, /* VHOST_USER_SET_LOG_FD           */
         set_vring_num,  /* VHOST_USER_SET_VRING_NUM        */
         NULL, /* VHOST_USER_SET_VRING_ADDR       */
-        NULL, /* VHOST_USER_SET_VRING_BASE       */
+        set_vring_base, /* VHOST_USER_SET_VRING_BASE       */
         NULL, /* VHOST_USER_GET_VRING_BASE       */
         set_vring_kick, /* VHOST_USER_SET_VRING_KICK       */
         set_vring_call, /* VHOST_USER_SET_VRING_CALL       */

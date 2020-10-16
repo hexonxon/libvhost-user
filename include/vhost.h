@@ -34,6 +34,9 @@ struct vring
 
     /** Size of the virtqueue (number of descriptors) */
     uint32_t size;
+
+    /** Base index in the available ring */
+    uint32_t avail_base;
 };
 
 /**
