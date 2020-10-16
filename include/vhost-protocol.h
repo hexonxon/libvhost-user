@@ -133,8 +133,8 @@ struct vhost_user_message
 
             /** a 32-bit vring flags */
             uint32_t flags;
-
-            uint64_t size;
+            /** Log address is valid */
+        #define VHOST_VRING_F_LOG 0
 
             /** a 64-bit ring address of the vring descriptor table */
             uint64_t descriptor;

@@ -551,6 +551,28 @@ static int set_vring_num(struct vhost_dev* dev, struct vhost_user_message* msg, 
     return 0;
 }
 
+static int set_vring_addr(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+{
+    if (msg->hdr.size < sizeof(msg->vring_address)) {
+        return -1;
+    }
+
+    if (msg->vring_state.index > dev->num_queues) {
+        return -1;
+    }
+
+    /* Currently we don't support logging */
+    if (has_feature(msg->vring_address.flags, VHOST_VRING_F_LOG)) {
+        return -1;
+    }
+
+    dev->vrings[msg->vring_state.index].avail_addr = msg->vring_address.available;
+    dev->vrings[msg->vring_state.index].desc_addr = msg->vring_address.descriptor;
+    dev->vrings[msg->vring_state.index].used_addr = msg->vring_address.used;
+
+    return 0;
+}
+
 static int set_vring_base(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     if (msg->hdr.size < sizeof(msg->vring_state)) {
@@ -581,7 +603,7 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
         NULL, /* VHOST_USER_SET_LOG_BASE         */
         NULL, /* VHOST_USER_SET_LOG_FD           */
         set_vring_num,  /* VHOST_USER_SET_VRING_NUM        */
-        NULL, /* VHOST_USER_SET_VRING_ADDR       */
+        set_vring_addr, /* VHOST_USER_SET_VRING_ADDR       */
         set_vring_base, /* VHOST_USER_SET_VRING_BASE       */
         NULL, /* VHOST_USER_GET_VRING_BASE       */
         set_vring_kick, /* VHOST_USER_SET_VRING_KICK       */

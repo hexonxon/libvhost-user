@@ -37,6 +37,11 @@ struct vring
 
     /** Base index in the available ring */
     uint32_t avail_base;
+
+    /** Addresses of the various parts of virtqueue */
+    uint64_t avail_addr;
+    uint64_t desc_addr;
+    uint64_t used_addr;
 };
 
 /**
