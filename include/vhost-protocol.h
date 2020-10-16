@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #define VHOST_USER_MAX_FDS 8
+#define VHOST_USER_MAX_CONFIG_SIZE 256
 
 /**
  * Feature bits
@@ -170,7 +171,7 @@ struct vhost_user_message
             uint32_t flags;
 
             /** Size bytes array holding the contents of the virtio device's configuration space */
-            uint8_t payload[];
+            uint8_t data[VHOST_USER_MAX_CONFIG_SIZE];
         } device_config_space;
 
         /** Vring area description */

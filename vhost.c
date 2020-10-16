@@ -297,6 +297,7 @@ static bool message_assumes_reply(const struct vhost_user_message* msg)
     case VHOST_USER_SET_LOG_BASE:
     case VHOST_USER_GET_INFLIGHT_FD:
     case VHOST_USER_GET_QUEUE_NUM:
+    case VHOST_USER_GET_CONFIG:
         return true;
     default:
         return false;
@@ -448,6 +449,26 @@ static int get_queue_num(struct vhost_dev* dev, struct vhost_user_message* msg, 
     return 0;
 }
 
+static int get_config(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+{
+    /* Since response size must match the master's request, lets check that its enough */
+    if (msg->hdr.size < sizeof(msg->device_config_space) - VHOST_USER_MAX_CONFIG_SIZE) {
+        return -1;
+    }
+
+    /* Safe to access config header now */
+    uint32_t size = msg->device_config_space.size;
+    uint32_t offset = msg->device_config_space.offset;
+    if (size < offset || size > VHOST_USER_MAX_CONFIG_SIZE) {
+        return -1;
+    }
+
+    uint32_t space_avail = size - offset;
+    memcpy(msg->device_config_space.data + offset, dev->config_space, space_avail);
+
+    return 0;
+}
+
 static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     VHOST_VERIFY(dev);
@@ -479,7 +500,7 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
         NULL, /* VHOST_USER_SET_SLAVE_REQ_FD     */
         NULL, /* VHOST_USER_IOTLB_MSG            */
         NULL, /* VHOST_USER_SET_VRING_ENDIAN     */
-        NULL, /* VHOST_USER_GET_CONFIG           */
+        get_config, /* VHOST_USER_GET_CONFIG           */
         NULL, /* VHOST_USER_SET_CONFIG           */
         NULL, /* VHOST_USER_CREATE_CRYPTO_SESSION*/
         NULL, /* VHOST_USER_CLOSE_CRYPTO_SESSION */

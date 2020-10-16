@@ -41,6 +41,9 @@ struct vhost_dev
     /** Mapped memory regions for this device */
     struct virtio_memory_map memory_map;
 
+    /** Device-specific config space buffer */
+    uint8_t config_space[VHOST_USER_MAX_CONFIG_SIZE];
+
     LIST_ENTRY(vhost_dev) link;
 };
 
