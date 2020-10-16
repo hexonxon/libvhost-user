@@ -8,6 +8,7 @@
 #include "vhost-protocol.h"
 
 #include "virtio/memory.h"
+#include "virtio/virtqueue.h"
 
 #define PAGE_SIZE 4096ull
 
@@ -30,6 +31,9 @@ struct vring
 
     /** Event fd we use to signal errors */
     int errfd;
+
+    /** Size of the virtqueue (number of descriptors) */
+    uint32_t size;
 };
 
 /**

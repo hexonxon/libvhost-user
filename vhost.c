@@ -533,6 +533,24 @@ static int set_vring_err(struct vhost_dev* dev, struct vhost_user_message* msg, 
     return set_vring_fd(dev, msg, fds, nfds, VRING_FD_ERR);
 }
 
+static int set_vring_num(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
+{
+    if (msg->hdr.size < sizeof(msg->vring_state)) {
+        return -1;
+    }
+
+    if (msg->vring_state.index > dev->num_queues) {
+        return -1;
+    }
+
+    if (msg->vring_state.num > VIRTQ_MAX_SIZE) {
+        return -1;
+    }
+
+    dev->vrings[msg->vring_state.index].size = msg->vring_state.num;
+    return 0;
+}
+
 static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     VHOST_VERIFY(dev);
@@ -548,7 +566,7 @@ static void handle_message(struct vhost_dev* dev, struct vhost_user_message* msg
         set_mem_table,  /* VHOST_USER_SET_MEM_TABLE        */
         NULL, /* VHOST_USER_SET_LOG_BASE         */
         NULL, /* VHOST_USER_SET_LOG_FD           */
-        NULL, /* VHOST_USER_SET_VRING_NUM        */
+        set_vring_num,  /* VHOST_USER_SET_VRING_NUM        */
         NULL, /* VHOST_USER_SET_VRING_ADDR       */
         NULL, /* VHOST_USER_SET_VRING_BASE       */
         NULL, /* VHOST_USER_GET_VRING_BASE       */
