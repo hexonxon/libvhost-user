@@ -42,12 +42,33 @@ struct vring
     uint64_t avail_addr;
     uint64_t desc_addr;
     uint64_t used_addr;
+
+    /** Vring is enabled: can pass data to/from the backend device */
+    bool is_enabled;
+
+    /** Vring is started: can service incoming buffers */
+    bool is_started;
+
+    /** Underlying virtqueue */
+    struct virtqueue vq;
 };
 
 /**
  * Reset vring to default state
  */
 void vring_reset(struct vring* vring);
+
+/**
+ * Start vring.
+ * Started vrings can handle guest buffers.
+ */
+int vring_start(struct vring* vring);
+
+/**
+ * Stop vring.
+ * Stopped vrings cannot handle guest buffers.
+ */
+void vring_stop(struct vring* vring);
 
 /**
  * Vhost device.

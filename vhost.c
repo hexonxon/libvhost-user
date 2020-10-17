@@ -31,6 +31,11 @@
     (1ull << VHOST_USER_PROTOCOL_F_RESET_DEVICE) | \
     0)
 
+static inline bool has_feature(uint64_t features, int fbit)
+{
+    return (features & (1ull << fbit)) != 0;
+}
+
 /* Global device list */
 LIST_HEAD(, vhost_dev) g_vhost_dev_list;
 
@@ -294,16 +299,65 @@ void vring_reset(struct vring* vring)
     vring->kickfd = -1;
     vring->callfd = -1;
     vring->errfd = -1;
+
+    /**
+     * Vring is enabled when:
+     * - if VHOST_USER_F_PROTOCOL_FEATURES has been negotiated -> on VHOST_USER_SET_VRING_ENABLE(1)
+     * - otherwise vring is always enabled
+     *
+     * Since we don't know when VHOST_USER_F_PROTOCOL_FEATURES will be negotiated,
+     * we assume vring to be always enabled until negotiation happens.
+     */
+    vring->is_enabled = !has_feature(vring->dev->negotiated_features, VHOST_USER_F_PROTOCOL_FEATURES);
+    vring->is_started = false;
+}
+
+int vring_start(struct vring* vring)
+{
+    VHOST_VERIFY(vring);
+
+    /* Sanity-check what we are starting */
+    if (vring->size == 0 || vring->kickfd == -1) {
+        return -EINVAL;
+    }
+
+    if (vring->is_started) {
+        VHOST_LOG_DEBUG("vring %p already started", vring);
+        return 0;
+    }
+
+    int error = virtqueue_start(&vring->vq,
+                                vring->size,
+                                vring->desc_addr,
+                                vring->avail_addr,
+                                vring->used_addr,
+                                vring->avail_base,
+                                &vring->dev->memory_map);
+
+    if (error) {
+        return error;
+    }
+
+    vring->is_started = true;
+    return 0;
+}
+
+void vring_stop(struct vring* vring)
+{
+    VHOST_VERIFY(vring);
+
+    if (!vring->is_started) {
+        VHOST_LOG_DEBUG("vring %p already stopped", vring);
+        return;
+    }
+
+    /* There is nothing to tell the actual virtqueue for now */
+    vring->is_started = false;
 }
 
 /*
  * Request handling
  */
-
-static inline bool has_feature(uint64_t features, int fbit)
-{
-    return (features & (1ull << fbit)) != 0;
-}
 
 static bool message_assumes_reply(const struct vhost_user_message* msg)
 {
@@ -687,9 +741,4 @@ void vhost_reset_dev(struct vhost_dev* dev)
     for (uint8_t i = 0; i < dev->num_queues; ++i) {
         vring_reset(dev->vrings + i);
     }
-
-    dev->memory_map = VIRTIO_INIT_MEMORY_MAP;
-    dev->negotiated_features = 0;
-    dev->negotiated_protocol_features = 0;
-    dev->session_started = false;
 }
