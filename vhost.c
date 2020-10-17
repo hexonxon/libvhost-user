@@ -1,5 +1,5 @@
 /**
- * Vhost protocol message handlinh
+ * Vhost protocol handling
  */
 
 #include <errno.h>
