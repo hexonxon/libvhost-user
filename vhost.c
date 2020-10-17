@@ -292,6 +292,28 @@ int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path,
  * Vrings
  */
 
+static void handle_vring_event(struct event_cb* cb, int fd, uint32_t events)
+{
+    struct vring* vring = cb->ptr;
+
+    VHOST_VERIFY(vring);
+    VHOST_VERIFY((events & ~(uint32_t)(EPOLLIN | EPOLLHUP | EPOLLERR)) == 0);
+
+    /* Handler disconnects first */
+    if (events & (EPOLLHUP | EPOLLERR)) {
+        vhost_evloop_del_fd(vring->kickfd);
+        close(vring->kickfd);
+        vring->kickfd = -1;
+    } else {
+        if (events & EPOLLIN) {
+            /* According to the spec vrings are started when they receive a kick */
+            vring_start(vring);
+
+            /* TODO: handle event */
+        }
+    }
+}
+
 void vring_reset(struct vring* vring)
 {
     VHOST_VERIFY(vring);
@@ -598,7 +620,23 @@ static int set_vring_fd(struct vhost_dev* dev, struct vhost_user_message* msg, i
 
 static int set_vring_kick(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
-    return set_vring_fd(dev, msg, fds, nfds, VRING_FD_KICK);
+    int error = set_vring_fd(dev, msg, fds, nfds, VRING_FD_KICK);
+    if (error) {
+        return error;
+    }
+
+    /*
+     * Register vring kickfd in event loop.
+     * TODO: for now we are using the global vhost event loop.
+     */
+
+    struct vring* vring = &dev->vrings[msg->u64 & 0xFF];
+    if (vring->kickfd != -1) {
+        vring->kick_cb = (struct event_cb){ EPOLLIN | EPOLLHUP, vring, handle_vring_event };
+        vhost_evloop_add_fd(vring->kickfd, &vring->kick_cb);
+    }
+
+    return 0;
 }
 
 static int set_vring_call(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)

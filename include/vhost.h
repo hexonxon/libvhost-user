@@ -51,6 +51,9 @@ struct vring
 
     /** Underlying virtqueue */
     struct virtqueue vq;
+
+    /** Event handler for kickfd */
+    struct event_cb kick_cb;
 };
 
 /**
