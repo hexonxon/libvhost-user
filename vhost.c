@@ -472,11 +472,35 @@ static int reset_owner(struct vhost_dev* dev, struct vhost_user_message* msg, in
     return 0;
 }
 
+static void reset_memory_map(struct vhost_dev* dev)
+{
+    /* Unmap mapped regions */
+    for (size_t i = 0; i < dev->memory_map.num_regions; ++i) {
+        munmap(dev->memory_map.regions[i].hva, dev->memory_map.regions[i].len);
+    }
+
+    dev->memory_map = VIRTIO_INIT_MEMORY_MAP;
+}
+
 static int set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     if (msg->mem_regions.num_regions > VHOST_USER_MAX_FDS) {
         return -1;
     }
+
+    /*
+     * Although vhost spec says that "some" aspects of a vring may change if it is started,
+     * we are not prepared to change memory map right now. Maybe we will have to in the future.
+     * See if we have any started vrings and bail out if we do.
+     */
+    for (size_t i = 0; i < dev->num_queues; ++i) {
+        if (dev->vrings[i].is_started) {
+            goto reset_dev;
+        }
+    }
+
+    /* Drop current memory map */
+    reset_memory_map(dev);
 
     for (size_t i = 0; i < msg->mem_regions.num_regions; ++i) {
         struct vhost_user_mem_region* mr = &msg->mem_regions.regions[i];
@@ -732,13 +756,14 @@ void vhost_reset_dev(struct vhost_dev* dev)
     /* Drop client connection */
     drop_connection(dev);
 
-    /* Unmap mapped regions */
-    for (size_t i = 0; i < dev->memory_map.num_regions; ++i) {
-        munmap(dev->memory_map.regions[i].hva, dev->memory_map.regions[i].len);
-    }
+    dev->negotiated_features = 0;
+    dev->negotiated_protocol_features = 0;
+    dev->session_started = false;
 
     /* Reset vrings */
     for (uint8_t i = 0; i < dev->num_queues; ++i) {
         vring_reset(dev->vrings + i);
     }
+
+    reset_memory_map(dev);
 }
