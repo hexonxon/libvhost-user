@@ -85,9 +85,15 @@ struct virtqueue
 };
 
 /**
- * Init virtqueue from mapped memory
+ * Start virtqueue with given arguments
  */
-int virtqueue_init(struct virtqueue* vq, void* base, uint16_t size, struct virtio_memory_map* mem);
+int virtqueue_start(struct virtqueue* vq,
+                    uint16_t qsize,
+                    uint64_t desc_addr,
+                    uint64_t avail_addr,
+                    uint64_t used_addr,
+                    uint16_t avail_base,
+                    struct virtio_memory_map* mem);
 
 /**
  * Dequeue next buffer chain from the queue.

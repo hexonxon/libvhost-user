@@ -20,19 +20,26 @@ static struct virtio_memory_map g_default_memory_map = {
     },
 };
 
+static int vq_init(struct virtqueue* vq, uint16_t qsize, void* base, struct virtio_memory_map* mem)
+{
+    uint64_t desc_addr = (uint64_t) base;
+    uint64_t avail_addr = desc_addr + sizeof(struct virtq_desc) * qsize;
+    uint64_t used_addr = VIRTQ_ALIGN_UP(avail_addr + sizeof(uint16_t) * (3 + qsize));
+
+    return virtqueue_start(vq, qsize, desc_addr, avail_addr, used_addr, 0, mem);
+}
+
 /* Allocate memory to hold a queue of qsize descriptors and init a virtqueue on top of it */
 static void* vq_alloc(uint16_t qsize, struct virtio_memory_map* mem, struct virtqueue* vq)
 {
     size_t size_bytes = virtq_size(qsize);
+    void* base = aligned_alloc(4096, size_bytes);
+    CU_ASSERT(base != NULL);
+    memset(base, 0, size_bytes);
 
-    void* queue_mem = aligned_alloc(4096, size_bytes);
-    CU_ASSERT(queue_mem != NULL);
-    memset(queue_mem, 0, size_bytes);
-
-    int res = virtqueue_init(vq, queue_mem, qsize, mem);
+    int res = vq_init(vq, qsize, base, mem);
     CU_ASSERT(res == 0);
-
-    return queue_mem;
+    return base;
 }
 
 /* Fill descriptor based on buffer description */
@@ -95,25 +102,6 @@ static void vq_dequeue_and_walk(struct virtqueue* vq, uint16_t expected_len)
 /*
  * Tests
  */
-
-/* Queue init test */
-static void init_test(void)
-{
-    const uint16_t qsize = 1024;
-
-    struct virtqueue vq;
-    void* qdata = vq_alloc(qsize, &g_default_memory_map, &vq);
-
-    /* Check parsed queue layout after init */
-    CU_ASSERT_EQUAL(vq.desc, qdata);
-    CU_ASSERT_EQUAL(vq.avail, ((void*)vq.desc + sizeof(struct virtq_desc) * qsize));
-    CU_ASSERT_EQUAL(vq.used, VIRTQ_ALIGN_UP_PTR((void*)vq.avail + sizeof(uint16_t) * (3 + qsize)));
-    CU_ASSERT_EQUAL(
-        qdata + virtq_size(qsize),
-        VIRTQ_ALIGN_UP_PTR((void*)vq.used + sizeof(uint16_t) * 3 + sizeof(struct virtq_used_elem) * qsize));
-
-    free(qdata);
-}
 
 /* Test direct descriptors enqueue and dequeue */
 static void dequeue_test(void)
@@ -316,17 +304,18 @@ static void init_negative_test(void)
 {
     size_t size_bytes = virtq_size(VIRTQ_MAX_SIZE);
     void* mem = aligned_alloc(4096, size_bytes);
+    CU_ASSERT_TRUE(mem != NULL);
 
     struct virtqueue vq;
 
     /* invalid qsize */
-    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem, 0, &g_default_memory_map));
-    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem, VIRTQ_MAX_SIZE + 1, &g_default_memory_map));
-    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem, VIRTQ_MAX_SIZE - 1 /* Within limits but not a power-of-2 */,
-                                       &g_default_memory_map));
+    CU_ASSERT_TRUE(0 != vq_init(&vq, 0, mem, &g_default_memory_map));
+    CU_ASSERT_TRUE(0 != vq_init(&vq, VIRTQ_MAX_SIZE + 1, mem, &g_default_memory_map));
+    CU_ASSERT_TRUE(0 != vq_init(&vq, VIRTQ_MAX_SIZE - 1 /* Within limits but not a power-of-2 */,
+                                mem, &g_default_memory_map));
 
     /* base memory not aligned */
-    CU_ASSERT_TRUE(0 != virtqueue_init(&vq, mem + 1, VIRTQ_MAX_SIZE, &g_default_memory_map));
+    CU_ASSERT_TRUE(0 != vq_init(&vq, VIRTQ_MAX_SIZE, mem + 1, &g_default_memory_map));
 
     free(mem);
 }
@@ -596,19 +585,29 @@ static void buffer_crosses_ro_boundary_test(void)
 {
     const uint16_t qsize = 1024;
 
+    size_t size_bytes = virtq_size(qsize);
+    void* base = aligned_alloc(4096, size_bytes);
+    CU_ASSERT(base != NULL);
+    memset(base, 0, size_bytes);
+
     struct virtio_memory_map map = VIRTIO_INIT_MEMORY_MAP;
+
+    /* Add the queue memory itself to valid map */
+    CU_ASSERT_TRUE(0 == virtio_add_guest_region(&map, (uint64_t) base, size_bytes, base, false));
+
+    /* Test regions */
     CU_ASSERT_TRUE(0 == virtio_add_guest_region(&map, 0x1000, 0x1000, (void*) 0x1000, false));
     CU_ASSERT_TRUE(0 == virtio_add_guest_region(&map, 0x2000, 0x1000, (void*) 0x2000, true));
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &map, &vq);
+    CU_ASSERT_TRUE(0 == vq_init(&vq, qsize, base, &map));
     vq_fill_desc_id(&vq, 0, (void*) 0x1000, 0x2000, VIRTQ_DESC_F_WRITE, 0);
     vq_publish_desc_id(&vq, 0);
 
     vq_dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
-    free(mem);
+    free(base);
 }
 
 /* Indirect descriptor table buffer is not mapped in guest memory */
@@ -616,11 +615,21 @@ static void unmapped_indirect_table_test(void)
 {
     const uint16_t qsize = 1024;
 
+    size_t size_bytes = virtq_size(qsize);
+    void* base = aligned_alloc(4096, size_bytes);
+    CU_ASSERT(base != NULL);
+    memset(base, 0, size_bytes);
+
     struct virtio_memory_map map = VIRTIO_INIT_MEMORY_MAP;
+
+    /* Add the queue memory itself to valid map */
+    CU_ASSERT_TRUE(0 == virtio_add_guest_region(&map, (uint64_t) base, size_bytes, base, false));
+
+    /* Test region */
     CU_ASSERT_TRUE(0 == virtio_add_guest_region(&map, 0x0, 0x1000, 0x0, true));
 
     struct virtqueue vq;
-    void* mem = vq_alloc(qsize, &map, &vq);
+    CU_ASSERT_TRUE(0 == vq_init(&vq, qsize, base, &map));
 
     /* Build a good indirect desc table to differentiate between mapping and contents error */
     struct virtq_desc itbl[1];
@@ -643,7 +652,7 @@ static void unmapped_indirect_table_test(void)
     vq_dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
-    free(mem);
+    free(base);
 }
 
 int main(int argc, char** argv)
@@ -658,7 +667,6 @@ int main(int argc, char** argv)
         return CU_get_error();
     }
 
-    CU_add_test(suite, "init_test", init_test);
     CU_add_test(suite, "dequeue_test", dequeue_test);
     CU_add_test(suite, "dequeue_indirect_test", dequeue_indirect_test);
     CU_add_test(suite, "dequeue_combined_test", dequeue_combined_test);

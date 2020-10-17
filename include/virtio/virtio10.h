@@ -5,6 +5,10 @@
 #define VIRTQ_MAX_SIZE          32768
 #define VIRTQ_INVALID_DESC_ID   VIRTQ_MAX_SIZE
 
+#define VIRTQ_DESC_ALIGNMENT    16
+#define VIRTQ_AVAIL_ALIGNMENT   2
+#define VIRTQ_USED_ALIGNMENT    4
+
 #define VIRTQ_ALIGN_MASK                    (4096ull - 1)
 #define VIRTQ_ALIGN_UP(_val)                (((_val) + VIRTQ_ALIGN_MASK) & ~VIRTQ_ALIGN_MASK)
 #define VIRTQ_ALIGN_UP_PTR(_ptr)            (void*)VIRTQ_ALIGN_UP((uintptr_t)(_ptr))

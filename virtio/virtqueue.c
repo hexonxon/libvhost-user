@@ -3,15 +3,24 @@
 #include "virtio/memory.h"
 #include "virtio/virtqueue.h"
 
-int virtqueue_init(struct virtqueue* vq, void* base, uint16_t qsize, struct virtio_memory_map* mem)
+int virtqueue_start(struct virtqueue* vq,
+                    uint16_t qsize,
+                    uint64_t desc_gpa,
+                    uint64_t avail_gpa,
+                    uint64_t used_gpa,
+                    uint16_t avail_base,
+                    struct virtio_memory_map* mem)
 {
-    VHOST_VERIFY(vq);
-    VHOST_VERIFY(base);
-    VHOST_VERIFY(mem);
+    if (!vq) {
+        return -EINVAL;
+    }
+
+    if (!mem) {
+        return -EINVAL;
+    }
 
     /*
      * 2.4 Virtqueues: "Queue size is always a power of 2"
-     * Note: we know that qsize is not 0 at this point.
      */
 
     if (!qsize || qsize & (qsize - 1)) {
@@ -22,27 +31,21 @@ int virtqueue_init(struct virtqueue* vq, void* base, uint16_t qsize, struct virt
         return -EINVAL;
     }
 
-    /*
-     * Refer to "2.4 Virtqueues" in virtio 1.0 spec for reasoning
-     * behind alignment and size calculations below
-     */
-
-    struct virtq_desc* pdesc = (struct virtq_desc*) base;
-    if (!VIRTQ_IS_ALIGNED_PTR(pdesc, 16)) {
+    uint32_t desc_size = sizeof(struct virtq_desc) * qsize;
+    struct virtq_desc* pdesc = virtio_find_gpa_range(mem, desc_gpa, desc_size, false);
+    if (pdesc == MAP_FAILED || !VIRTQ_IS_ALIGNED_PTR(pdesc, VIRTQ_DESC_ALIGNMENT)) {
         return -EINVAL;
     }
 
-    base += 16 * qsize;
-    struct virtq_avail* pavail = (struct virtq_avail*) base;
-    if (!VIRTQ_IS_ALIGNED_PTR(pavail, 2)) {
+    uint32_t avail_size = sizeof(struct virtq_avail) + sizeof(uint16_t) * qsize + 2 /* for used_event */;
+    struct virtq_avail* pavail = virtio_find_gpa_range(mem, avail_gpa, avail_size, false);
+    if (pavail == MAP_FAILED || !VIRTQ_IS_ALIGNED_PTR(pavail, VIRTQ_AVAIL_ALIGNMENT)) {
         return -EINVAL;
     }
 
-    /* Align up to qalign to skip the padding */
-    base += (6 + 2 * qsize);
-    base = VIRTQ_ALIGN_UP_PTR(base);
-    struct virtq_used* pused = (struct virtq_used*) base;
-    if (!VIRTQ_IS_ALIGNED_PTR(pused, 4)) {
+    uint32_t used_size = sizeof(struct virtq_used) + sizeof(struct virtq_used_elem) * qsize + 2 /* for avail_event */;
+    struct virtq_used* pused = virtio_find_gpa_range(mem, used_gpa, used_size, false);
+    if (pused == MAP_FAILED || !VIRTQ_IS_ALIGNED_PTR(pused, VIRTQ_USED_ALIGNMENT)) {
         return -EINVAL;
     }
 
@@ -50,7 +53,7 @@ int virtqueue_init(struct virtqueue* vq, void* base, uint16_t qsize, struct virt
     vq->avail = pavail;
     vq->used = pused;
     vq->qsize = qsize;
-    vq->last_seen_avail = 0;
+    vq->last_seen_avail = avail_base;
     vq->is_broken = false;
     vq->mem = mem;
 
