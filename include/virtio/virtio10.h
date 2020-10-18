@@ -15,6 +15,7 @@
 #define VIRTQ_IS_ALIGNED(_val, _align)      (((_val) & ((__typeof(_val))(_align) - 1)) == 0)
 #define VIRTQ_IS_ALIGNED_PTR(_ptr, _align)  VIRTQ_IS_ALIGNED((uintptr_t)(_ptr), _align)
 
+typedef uint8_t  u8;
 typedef uint16_t le16;
 typedef uint32_t le32;
 typedef uint64_t le64;
@@ -88,3 +89,75 @@ static inline size_t virtq_size(uint16_t qsz)
     return VIRTQ_ALIGN_UP(sizeof(struct virtq_desc) * qsz + sizeof(uint16_t) * (3 + qsz))  +
            VIRTQ_ALIGN_UP(sizeof(uint16_t) * 3 + sizeof(struct virtq_used_elem) * qsz);
 }
+
+/*
+ * virtio-blk specifics
+ */
+
+#define VIRTIO_BLK_DEVICE_ID    2
+#define VIRTIO_BLK_SECTOR_SHIFT 9
+#define VIRTIO_BLK_SECTOR_SIZE  (1ul << VIRTIO_BLK_SECTOR_SHIFT)
+
+/**
+ * Feature bits
+ */
+#define VIRTIO_BLK_F_BARRIER    0
+#define VIRTIO_BLK_F_SIZE_MAX   1
+#define VIRTIO_BLK_F_SEG_MAX    2
+#define VIRTIO_BLK_F_GEOMETRY   4
+#define VIRTIO_BLK_F_RO         5
+#define VIRTIO_BLK_F_BLK_SIZE   6
+#define VIRTIO_BLK_F_SCSI       7
+#define VIRTIO_BLK_F_FLUSH      9
+#define VIRTIO_BLK_F_TOPOLOGY   10
+#define VIRTIO_BLK_F_CONFIG_WCE 11
+
+/**
+ * Device configuration layout
+ */
+struct virtio_blk_config {
+    le64 capacity;
+    le32 size_max;
+    le32 seg_max;
+    struct virtio_blk_geometry {
+        le16 cylinders;
+        u8 heads;
+        u8 sectors;
+    } geometry;
+    le32 blk_size;
+    struct virtio_blk_topology {
+        // # of logical blocks per physical block (log2)
+        u8 physical_block_exp;
+        // offset of first aligned logical block
+        u8 alignment_offset;
+        // suggested minimum I/O size in blocks
+        le16 min_io_size;
+        // optimal (suggested maximum) I/O size in blocks
+        le32 opt_io_size;
+    } topology;
+    u8 writeback;
+};
+
+/**
+ * Request types
+ */
+#define VIRTIO_BLK_T_IN     0
+#define VIRTIO_BLK_T_OUT    1
+#define VIRTIO_BLK_T_FLUSH  4
+
+struct virtio_blk_req {
+    le32 type;
+    le32 reserved;
+    le64 sector;
+};
+
+/**
+ * Request status codes
+ */
+#define VIRTIO_BLK_S_OK     0
+#define VIRTIO_BLK_S_IOERR  1
+#define VIRTIO_BLK_S_UNSUPP 2
+
+struct virtio_blk_req_status {
+    u8 status;
+};
