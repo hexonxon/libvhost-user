@@ -11,6 +11,8 @@
 #include "virtio/virtqueue.h"
 #include "virtio/memory.h"
 
+#include "vq_data.h"
+
 /* Default memory map just allows the entire address space for rw access.
  * Specific tests might use something more restictive. */
 static struct virtio_memory_map g_default_memory_map = {
@@ -20,64 +22,14 @@ static struct virtio_memory_map g_default_memory_map = {
     },
 };
 
-static int vq_init(struct virtqueue* vq, uint16_t qsize, void* base, struct virtio_memory_map* mem)
-{
-    uint64_t desc_addr = (uint64_t) base;
-    uint64_t avail_addr = desc_addr + sizeof(struct virtq_desc) * qsize;
-    uint64_t used_addr = VIRTQ_ALIGN_UP(avail_addr + sizeof(uint16_t) * (3 + qsize));
-
-    return virtqueue_start(vq, qsize, desc_addr, avail_addr, used_addr, 0, mem);
-}
-
-/* Allocate memory to hold a queue of qsize descriptors and init a virtqueue on top of it */
-static void* vq_alloc(uint16_t qsize, struct virtio_memory_map* mem, struct virtqueue* vq)
-{
-    size_t size_bytes = virtq_size(qsize);
-    void* base = aligned_alloc(4096, size_bytes);
-    CU_ASSERT(base != NULL);
-    memset(base, 0, size_bytes);
-
-    int res = vq_init(vq, qsize, base, mem);
-    CU_ASSERT(res == 0);
-    return base;
-}
-
-/* Fill descriptor based on buffer description */
-static void vq_fill_desc(struct virtq_desc* desc, void* addr, size_t len, uint16_t flags, uint16_t next)
-{
-    desc->addr = (uintptr_t) addr;
-    desc->len = (uint32_t) len;
-    desc->flags = flags;
-    desc->next = next;
-}
-
-static void vq_validate_desc(const struct virtq_desc* desc, const struct virtqueue_buffer* buf)
+static void validate_desc(const struct virtq_desc* desc, const struct virtqueue_buffer* buf)
 {
     CU_ASSERT_EQUAL(buf->ptr, (void*) desc->addr);
     CU_ASSERT_EQUAL(buf->len, desc->len);
     CU_ASSERT_EQUAL(buf->ro, (desc->flags & VIRTQ_DESC_F_WRITE) == 0);
 }
 
-/* Fill descriptor with a given id */
-static struct virtq_desc* vq_fill_desc_id(
-    struct virtqueue* vq,
-    uint16_t id,
-    void* addr,
-    size_t len,
-    uint16_t flags,
-    uint16_t next)
-{
-    vq_fill_desc(&vq->desc[id], addr, len, flags, next);
-    return &vq->desc[id];
-}
-
-static void vq_publish_desc_id(struct virtqueue* vq, uint16_t id)
-{
-    vq->avail->ring[vq->avail->idx] = id;
-    vq->avail->idx++;
-}
-
-static void vq_dequeue_and_verify(struct virtqueue* vq, struct virtq_desc** chain, uint16_t chain_len)
+static void dequeue_and_verify(struct virtqueue* vq, struct virtq_desc** chain, uint16_t chain_len)
 {
     struct virtqueue_buffer buf;
     struct virtqueue_desc_chain iter;
@@ -86,22 +38,18 @@ static void vq_dequeue_and_verify(struct virtqueue* vq, struct virtq_desc** chai
     for (uint16_t i = 0; i < chain_len; ++i) {
         CU_ASSERT_TRUE(virtqueue_next_buffer(&iter, &buf));
         if (chain) {
-            vq_validate_desc(chain[i], &buf);
+            validate_desc(chain[i], &buf);
         }
     }
 
     CU_ASSERT_FALSE(virtqueue_next_buffer(&iter, &buf));
 }
 
-static void vq_dequeue_and_walk(struct virtqueue* vq, uint16_t expected_len)
+static void dequeue_and_walk(struct virtqueue* vq, uint16_t expected_len)
 {
     /* Just walk the chain and do nothing - we expect queue to [not] turn broken */
-    vq_dequeue_and_verify(vq, NULL, expected_len);
+    dequeue_and_verify(vq, NULL, expected_len);
 }
-
-/*
- * Tests
- */
 
 /* Test direct descriptors enqueue and dequeue */
 static void dequeue_test(void)
@@ -130,7 +78,7 @@ static void dequeue_test(void)
      * Check what we get back from the virtqueue
      */
 
-    vq_dequeue_and_verify(&vq, chain, qsize);
+    dequeue_and_verify(&vq, chain, qsize);
     CU_ASSERT_FALSE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -178,7 +126,7 @@ static void dequeue_indirect_test(void)
      * Check what we get back from the virtqueue
      */
 
-    vq_dequeue_and_verify(&vq, chain, chain_len);
+    dequeue_and_verify(&vq, chain, chain_len);
     CU_ASSERT_FALSE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -223,7 +171,7 @@ static void dequeue_combined_test(void)
      * Check what we get back from the virtqueue
      */
 
-    vq_dequeue_and_verify(&vq, chain, qsize - 1);
+    dequeue_and_verify(&vq, chain, qsize - 1);
     CU_ASSERT_FALSE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -252,7 +200,7 @@ static void dequeue_many_test(void)
      */
 
     for (uint16_t i = 0; i < qsize; ++i) {
-        vq_dequeue_and_verify(&vq, &chain[i], 1);
+        dequeue_and_verify(&vq, &chain[i], 1);
         CU_ASSERT_FALSE(virtqueue_is_broken(&vq));
     }
 
@@ -292,7 +240,7 @@ static void dequeue_many_indirect_test(void)
      */
 
     for (uint16_t i = 0; i < qsize; ++i) {
-        vq_dequeue_and_verify(&vq, chain, chain_len);
+        dequeue_and_verify(&vq, chain, chain_len);
         CU_ASSERT_FALSE(virtqueue_is_broken(&vq));
     }
 
@@ -360,7 +308,7 @@ static void descriptor_chain_too_long_test(void)
     vq_publish_desc_id(&vq, 0);
 
     /* The last one should fail and mark the queue broken, so we expect 1 less to walk */
-    vq_dequeue_and_walk(&vq, qsize - 1);
+    dequeue_and_walk(&vq, qsize - 1);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -384,7 +332,7 @@ static void several_indirect_descriptors_test(void)
     vq_publish_desc_id(&vq, 0);
 
     /* This should encounter bad indirect + next descriptor and fail */
-    vq_dequeue_and_walk(&vq, 0);
+    dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -403,7 +351,7 @@ static void empty_indirect_table_test(void)
     vq_publish_desc_id(&vq, 0);
 
     /* This should encounter bad table and fail */
-    vq_dequeue_and_walk(&vq, 0);
+    dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -420,7 +368,7 @@ static void invalid_next_descriptor_id(void)
     vq_fill_desc_id(&vq, 0, (void*) 0x1000, 0x10, VIRTQ_DESC_F_NEXT, qsize);
     vq_publish_desc_id(&vq, 0);
 
-    vq_dequeue_and_walk(&vq, 0);
+    dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -440,7 +388,7 @@ static void invalid_next_indirect_descriptor_id(void)
     vq_fill_desc_id(&vq, 0, itbl, sizeof(itbl), VIRTQ_DESC_F_INDIRECT, qsize);
     vq_publish_desc_id(&vq, 0);
 
-    vq_dequeue_and_walk(&vq, 0);
+    dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -459,7 +407,7 @@ static void nested_indirect_descriptor_test(void)
     vq_fill_desc_id(&vq, 0, itbl, sizeof(itbl), VIRTQ_DESC_F_INDIRECT, qsize);
     vq_publish_desc_id(&vq, 0);
 
-    vq_dequeue_and_walk(&vq, 0);
+    dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -538,7 +486,7 @@ static void ignore_write_only_for_indirect_descriptor_test(void)
     vq_publish_desc_id(&vq, 0);
 
     /* Traversal should succeed entirely */
-    vq_dequeue_and_walk(&vq, 1);
+    dequeue_and_walk(&vq, 1);
     CU_ASSERT_FALSE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -555,7 +503,7 @@ static void zero_length_descriptor_test(void)
     vq_fill_desc_id(&vq, 0, (void*) 0x1000, 0, VIRTQ_DESC_F_WRITE, 0);
     vq_publish_desc_id(&vq, 0);
 
-    vq_dequeue_and_walk(&vq, 0);
+    dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -574,7 +522,7 @@ static void zero_length_indirect_descriptor_test(void)
     vq_fill_desc_id(&vq, 0, itbl, sizeof(itbl), VIRTQ_DESC_F_INDIRECT, 0);
     vq_publish_desc_id(&vq, 0);
 
-    vq_dequeue_and_walk(&vq, 0);
+    dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -604,7 +552,7 @@ static void buffer_crosses_ro_boundary_test(void)
     vq_fill_desc_id(&vq, 0, (void*) 0x1000, 0x2000, VIRTQ_DESC_F_WRITE, 0);
     vq_publish_desc_id(&vq, 0);
 
-    vq_dequeue_and_walk(&vq, 0);
+    dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(base);
@@ -649,7 +597,7 @@ static void unmapped_indirect_table_test(void)
     vq_fill_desc_id(&vq, 0, (void*) itbl, 0x1000, VIRTQ_DESC_F_WRITE, 0);
     vq_publish_desc_id(&vq, 0);
 
-    vq_dequeue_and_walk(&vq, 0);
+    dequeue_and_walk(&vq, 0);
     CU_ASSERT_TRUE(virtqueue_is_broken(&vq));
 
     free(base);
