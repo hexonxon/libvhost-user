@@ -301,8 +301,27 @@ static void no_data_buffers(void)
     struct virtio_blk_req hdr = { VIRTIO_BLK_T_OUT, 0 };
     uint8_t status;
 
-    vq_fill_desc_id(&dev.queues[0].vq, 0, &hdr, sizeof(hdr) + 1, VIRTQ_DESC_F_NEXT, 1);
+    vq_fill_desc_id(&dev.queues[0].vq, 0, &hdr, sizeof(hdr), VIRTQ_DESC_F_NEXT, 1);
     vq_fill_desc_id(&dev.queues[0].vq, 1, &status, sizeof(status), VIRTQ_DESC_F_WRITE, 0);
+    vq_publish_desc_id(&dev.queues[0].vq, 0);
+
+    struct blk_io_request* bio = NULL;
+    CU_ASSERT(0 != virtio_blk_dequeue_request(&dev.vblk, &dev.queues[0].vq, &bio));
+
+    vblk_free(&dev);
+}
+
+/**
+ * Submit a request with missing data and status buffers
+ */
+static void no_data_or_status_buffers(void)
+{
+    struct vblk_test_dev dev;
+    vblk_init(&dev, VBLK_TEST_DEV_SECTORS, VBLK_TEST_DEV_BSIZE, true, false, 1);
+
+    struct virtio_blk_req hdr = { VIRTIO_BLK_T_OUT, 0 };
+
+    vq_fill_desc_id(&dev.queues[0].vq, 0, &hdr, sizeof(hdr), 0, 1);
     vq_publish_desc_id(&dev.queues[0].vq, 0);
 
     struct blk_io_request* bio = NULL;
@@ -322,7 +341,7 @@ static void zero_data_size(void)
     struct virtio_blk_req hdr = { VIRTIO_BLK_T_OUT, 0 };
     uint8_t status;
 
-    vq_fill_desc_id(&dev.queues[0].vq, 0, &hdr, sizeof(hdr) + 1, VIRTQ_DESC_F_NEXT, 1);
+    vq_fill_desc_id(&dev.queues[0].vq, 0, &hdr, sizeof(hdr), VIRTQ_DESC_F_NEXT, 1);
     vq_fill_desc_id(&dev.queues[0].vq, 1, (void*) 0x1000, 0, VIRTQ_DESC_F_NEXT, 2);
     vq_fill_desc_id(&dev.queues[0].vq, 2, &status, sizeof(status), VIRTQ_DESC_F_WRITE, 0);
     vq_publish_desc_id(&dev.queues[0].vq, 0);
@@ -352,6 +371,7 @@ int main(int argc, char** argv)
     CU_add_test(suite, "incorrect_status_buffer_size", incorrect_status_buffer_size);
     CU_add_test(suite, "incorrect_header_buffer_size", incorrect_header_buffer_size);
     CU_add_test(suite, "no_data_buffers", no_data_buffers);
+    CU_add_test(suite, "no_data_or_status_buffers", no_data_or_status_buffers);
     CU_add_test(suite, "zero_data_size", zero_data_size);
 
     /* run tests */

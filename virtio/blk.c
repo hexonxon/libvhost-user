@@ -158,6 +158,13 @@ static struct virtio_blk_io* blk_rw(struct virtio_blk* vblk,
         }
     }
 
+    /**
+     * If we're missing data buffers or status buffer or both - just fail the request
+     */
+    if (!total_sectors || !pstatus) {
+        return NULL;
+    }
+
     vblk_io->vq = iter->vq;
     vblk_io->pstatus = pstatus;
     vblk_io->head = iter->head; /* TODO: be less intrusive here */
