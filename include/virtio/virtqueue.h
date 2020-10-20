@@ -55,9 +55,14 @@ struct virtqueue_desc_chain
 bool virtqueue_next_buffer(struct virtqueue_desc_chain* iter, struct virtqueue_buffer* buf);
 
 /**
+ * Tell if next call to virtqueue_next_buffer will return false
+ */
+bool virtqueue_has_next_buffer(struct virtqueue_desc_chain* iter);
+
+/**
  * Release the chain buffers by moving them into used ring.
  */
-void virtqueue_release_buffers(struct virtqueue_desc_chain* iter, uint32_t bytes_written);
+void virtqueue_release_buffers(struct virtqueue_desc_chain* iter, uint32_t nwritten);
 
 /**
  * Virtqueue tracking struct
@@ -102,6 +107,11 @@ int virtqueue_start(struct virtqueue* vq,
  * Also can mark the virtqueue broken if we encountered a bad chain.
  */
 bool virtqueue_dequeue(struct virtqueue* vq, struct virtqueue_desc_chain* chain);
+
+/**
+ * Enqueue descriptor chain head into used ring
+ */
+void virtqueue_enqueue_used(struct virtqueue* vq, uint16_t desc_id, uint32_t nwritten);
 
 /**
  * Tell if virtqueue is broken by invalid guest data.

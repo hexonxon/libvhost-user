@@ -236,12 +236,18 @@ mark_broken:
     return false;
 }
 
-void virtqueue_release_buffers(struct virtqueue_desc_chain* iter, uint32_t bytes_written)
+bool virtqueue_has_next_buffer(struct virtqueue_desc_chain* iter)
 {
-    uint16_t used_idx = read_used_idx(iter->vq);
-    iter->vq->used[get_index(iter->vq, used_idx)] = (struct virtq_used) { iter->head, bytes_written };
+    if (!iter) {
+        return false;
+    }
 
-    write_used_idx(iter->vq, used_idx + 1);
+    return (iter->cur != VIRTQ_INVALID_DESC_ID);
+}
+
+void virtqueue_release_buffers(struct virtqueue_desc_chain* iter, uint32_t nwritten)
+{
+    virtqueue_enqueue_used(iter->vq, iter->head, nwritten);
 }
 
 bool virtqueue_dequeue(struct virtqueue* vq, struct virtqueue_desc_chain* chain)
@@ -259,4 +265,11 @@ bool virtqueue_dequeue(struct virtqueue* vq, struct virtqueue_desc_chain* chain)
     }
 
     return false;
+}
+
+void virtqueue_enqueue_used(struct virtqueue* vq, uint16_t desc_id, uint32_t nwritten)
+{
+    uint16_t used_idx = read_used_idx(vq);
+    vq->used[get_index(vq, used_idx)] = (struct virtq_used) { desc_id, nwritten };
+    write_used_idx(vq, used_idx + 1);
 }
