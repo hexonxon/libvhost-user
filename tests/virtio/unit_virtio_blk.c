@@ -194,8 +194,8 @@ static void rw_request_test(void)
     CU_ASSERT_EQUAL(req.status, BLK_SUCCESS);
 
     /* vq we used for request should be empty now */
-    struct virtqueue_desc_chain unused;
-    CU_ASSERT_FALSE(virtqueue_dequeue(&dev.queues[0].vq, &unused));
+    struct virtqueue_buffer_iter unused;
+    CU_ASSERT_FALSE(virtqueue_dequeue_avail(&dev.queues[0].vq, &unused));
 
     vblk_free(&dev);
 }

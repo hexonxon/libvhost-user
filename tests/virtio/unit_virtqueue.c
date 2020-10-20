@@ -32,8 +32,8 @@ static void validate_desc(const struct virtq_desc* desc, const struct virtqueue_
 static void dequeue_and_verify(struct virtqueue* vq, struct virtq_desc** chain, uint16_t chain_len)
 {
     struct virtqueue_buffer buf;
-    struct virtqueue_desc_chain iter;
-    CU_ASSERT_TRUE(virtqueue_dequeue(vq, &iter));
+    struct virtqueue_buffer_iter iter;
+    CU_ASSERT_TRUE(virtqueue_dequeue_avail(vq, &iter));
 
     for (uint16_t i = 0; i < chain_len; ++i) {
         CU_ASSERT_TRUE(virtqueue_next_buffer(&iter, &buf));
@@ -276,8 +276,8 @@ static void dequeue_empty_test(void)
     struct virtqueue vq;
     void* mem = vq_alloc(qsize, &g_default_memory_map, &vq);
 
-    struct virtqueue_desc_chain iter;
-    CU_ASSERT_FALSE(virtqueue_dequeue(&vq, &iter));
+    struct virtqueue_buffer_iter iter;
+    CU_ASSERT_FALSE(virtqueue_dequeue_avail(&vq, &iter));
     CU_ASSERT_FALSE(virtqueue_is_broken(&vq));
 
     free(mem);
@@ -426,8 +426,8 @@ static void descriptor_loop_test(void)
     vq_publish_desc_id(&vq, 0);
 
     struct virtqueue_buffer buf;
-    struct virtqueue_desc_chain iter;
-    CU_ASSERT_TRUE(virtqueue_dequeue(&vq, &iter));
+    struct virtqueue_buffer_iter iter;
+    CU_ASSERT_TRUE(virtqueue_dequeue_avail(&vq, &iter));
 
     /* We don't know _when_ exactly the loop will be detected - we just know that it _should_ be.
      * So this test becomes an infinite loop if loop detection is not working at all */
@@ -455,8 +455,8 @@ static void indirect_descriptor_loop_test(void)
     vq_publish_desc_id(&vq, 0);
 
     struct virtqueue_buffer buf;
-    struct virtqueue_desc_chain iter;
-    CU_ASSERT_TRUE(virtqueue_dequeue(&vq, &iter));
+    struct virtqueue_buffer_iter iter;
+    CU_ASSERT_TRUE(virtqueue_dequeue_avail(&vq, &iter));
 
     /* We don't know _when_ exactly the loop will be detected - we just know that it _should_ be.
      * So this test becomes an infinite loop if loop detection is not working at all */

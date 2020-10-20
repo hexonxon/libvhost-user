@@ -113,7 +113,7 @@ static inline void write_used_idx(const struct virtqueue* vq, uint16_t idx)
     vq->used->idx = idx;
 }
 
-static void start_desc_chain(struct virtqueue_desc_chain* iter, struct virtqueue* vq, uint16_t head)
+static void start_desc_chain(struct virtqueue_buffer_iter* iter, struct virtqueue* vq, uint16_t head)
 {
     iter->vq = vq;
     iter->head = head;
@@ -124,7 +124,7 @@ static void start_desc_chain(struct virtqueue_desc_chain* iter, struct virtqueue
     iter->nseen = 0;
 }
 
-bool virtqueue_next_buffer(struct virtqueue_desc_chain* iter, struct virtqueue_buffer* buf)
+bool virtqueue_next_buffer(struct virtqueue_buffer_iter* iter, struct virtqueue_buffer* buf)
 {
     VHOST_VERIFY(iter);
     VHOST_VERIFY(buf);
@@ -236,7 +236,7 @@ mark_broken:
     return false;
 }
 
-bool virtqueue_has_next_buffer(struct virtqueue_desc_chain* iter)
+bool virtqueue_has_next_buffer(struct virtqueue_buffer_iter* iter)
 {
     if (!iter) {
         return false;
@@ -245,12 +245,12 @@ bool virtqueue_has_next_buffer(struct virtqueue_desc_chain* iter)
     return (iter->cur != VIRTQ_INVALID_DESC_ID);
 }
 
-void virtqueue_release_buffers(struct virtqueue_desc_chain* iter, uint32_t nwritten)
+void virtqueue_release_buffers(struct virtqueue_buffer_iter* iter, uint32_t nwritten)
 {
     virtqueue_enqueue_used(iter->vq, iter->head, nwritten);
 }
 
-bool virtqueue_dequeue(struct virtqueue* vq, struct virtqueue_desc_chain* chain)
+bool virtqueue_dequeue_avail(struct virtqueue* vq, struct virtqueue_buffer_iter* chain)
 {
     if (virtqueue_is_broken(vq)) {
         return false;

@@ -97,7 +97,7 @@ static void complete_blk_request(struct virtio_blk* vblk, struct virtio_blk_io* 
 
 static struct virtio_blk_io* blk_rw(struct virtio_blk* vblk,
                                     const struct virtio_blk_req* hdr,
-                                    struct virtqueue_desc_chain* iter)
+                                    struct virtqueue_buffer_iter* iter)
 {
     bool is_read = (hdr->type == VIRTIO_BLK_T_IN);
     uint64_t sector = hdr->sector;
@@ -173,7 +173,7 @@ error_out:
     return NULL;
 }
 
-static struct virtio_blk_io* handle_blk_request(struct virtio_blk* vblk, struct virtqueue_desc_chain* iter)
+static struct virtio_blk_io* handle_blk_request(struct virtio_blk* vblk, struct virtqueue_buffer_iter* iter)
 {
     struct virtio_blk_io* vblk_io = NULL;
     struct virtqueue_buffer buf;
@@ -224,8 +224,8 @@ int virtio_blk_dequeue_request(struct virtio_blk* vblk, struct virtqueue* vq, st
         return -ENXIO;
     }
 
-    struct virtqueue_desc_chain iter;
-    if (!virtqueue_dequeue(vq, &iter)) {
+    struct virtqueue_buffer_iter iter;
+    if (!virtqueue_dequeue_avail(vq, &iter)) {
         return -ENOENT;
     }
 

@@ -7,6 +7,9 @@
 
 /**
  * Buffer described by a virtq descriptor and mapped to host address space.
+ *
+ * Working with this buffer is safer than accessing raw virtio descriptors.
+ * Queue implementation makes sure to sanitize descriptor data before mapping the buffer.
  */
 struct virtqueue_buffer
 {
@@ -22,9 +25,9 @@ struct virtqueue_buffer
 
 /**
  * Virtqueue descriptor chain iterator.
- * Allows device types to traverse a single descriptor chain.
+ * Allows device types to traverse a single descriptor chain in a safe manner.
  */
-struct virtqueue_desc_chain
+struct virtqueue_buffer_iter
 {
     /** Containing virtqueue (to mark broken if we don't like something) */
     struct virtqueue* vq;
@@ -50,19 +53,25 @@ struct virtqueue_desc_chain
 
 /**
  * Get next buffer from descriptor chain.
- * Will return false once there are no more buffers available.
+ *
+ * Will return false once there are no more buffers available or if we detected bad input.
+ * Returned buffers are sanitized for access on behalf of the guest that owns the queue.
  */
-bool virtqueue_next_buffer(struct virtqueue_desc_chain* iter, struct virtqueue_buffer* buf);
+bool virtqueue_next_buffer(struct virtqueue_buffer_iter* iter, struct virtqueue_buffer* buf);
 
 /**
  * Tell if next call to virtqueue_next_buffer will return false
  */
-bool virtqueue_has_next_buffer(struct virtqueue_desc_chain* iter);
+bool virtqueue_has_next_buffer(struct virtqueue_buffer_iter* iter);
 
 /**
- * Release the chain buffers by moving them into used ring.
+ * Release the chain buffers by moving head id to used ring.
+ *
+ * @nwritten    Optional total number of bytes written by the device when handling the chain.
+ *              This is an optional hint to provide to the guest driver so that only this much data
+ *              is zeroed-out when reusing the buffer.
  */
-void virtqueue_release_buffers(struct virtqueue_desc_chain* iter, uint32_t nwritten);
+void virtqueue_release_buffers(struct virtqueue_buffer_iter* iter, uint32_t nwritten);
 
 /**
  * Virtqueue tracking struct
@@ -106,10 +115,15 @@ int virtqueue_start(struct virtqueue* vq,
  * Returns false if there are no new buffer chains available.
  * Also can mark the virtqueue broken if we encountered a bad chain.
  */
-bool virtqueue_dequeue(struct virtqueue* vq, struct virtqueue_desc_chain* chain);
+bool virtqueue_dequeue_avail(struct virtqueue* vq, struct virtqueue_buffer_iter* out_iter);
 
 /**
  * Enqueue descriptor chain head into used ring
+ *
+ * @desc_id     Id of a head decriptor that starts a buffer chain.
+ * @nwritten    Optional total number of bytes written by the device when handling the chain.
+ *              This is an optional hint to provide to the guest driver so that only this much data
+ *              is zeroed-out when reusing the buffer.
  */
 void virtqueue_enqueue_used(struct virtqueue* vq, uint16_t desc_id, uint32_t nwritten);
 
