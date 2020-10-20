@@ -89,7 +89,7 @@ struct vhost_dev
     struct event_cb server_cb;
 
     /** features we negotiated successfully over handshake */
-    uint64_t negotiated_features;
+    bool has_protocol_features;
     uint64_t negotiated_protocol_features;
 
     /** We have received VHOST_USER_SET_OWNER */
@@ -104,13 +104,28 @@ struct vhost_dev
     /** Mapped memory regions for this device */
     struct virtio_memory_map memory_map;
 
-    /** Device-specific config space buffer */
-    uint8_t config_space[VHOST_USER_MAX_CONFIG_SIZE];
+    /** Virtio device we are servicing */
+    struct virtio_dev* vdev;
 
     LIST_ENTRY(vhost_dev) link;
 };
 
-int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path, uint8_t num_queues);
+/**
+ * Register and expose vhost server to service virtio device requests
+ *
+ * @dev             Vhost device to initialize
+ * @socket_path     Path of unix domain socket to create and listen on
+ * @num_queues      Number of queues for new device
+ * @vdev            Virtio device we will be servicing requests for
+ */
+int vhost_register_device_server(struct vhost_dev* dev,
+                                 const char* socket_path,
+                                 uint8_t num_queues,
+                                 struct virtio_dev* vdev);
+
+/**
+ * Reset vhost device state and drop master connection if any
+ */
 void vhost_reset_dev(struct vhost_dev* dev);
 
 /**

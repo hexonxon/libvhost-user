@@ -9,12 +9,18 @@
 #include <sys/types.h>
 
 #include <vhost.h>
+#include <virtio/blk.h>
 
 #define DIE(fmt, ...) do { \
     fprintf(stderr, fmt, ##__VA_ARGS__); \
     fprintf(stderr, "\n"); \
     exit(EXIT_FAILURE); \
 } while (0);
+
+enum {
+    VBLK_TEST_DEV_SECTORS = 1024,
+    VBLK_TEST_DEV_BSIZE = 4096,
+};
 
 static void usage(void)
 {
@@ -36,8 +42,18 @@ int main(int argc, char** argv)
         DIE("Socket path %s already exists, refusing to reuse", socket_path);
     }
 
+    struct virtio_blk vblk;
+    vblk.total_sectors = VBLK_TEST_DEV_SECTORS;
+    vblk.block_size = VBLK_TEST_DEV_BSIZE;
+    vblk.readonly = false;
+    vblk.writeback = false;
+    error = virtio_blk_init(&vblk);
+    if (error) {
+        DIE("Failed to initialize virtio-blk device: %d", error);
+    }
+
     struct vhost_dev dev;
-    error = vhost_register_device_server(&dev, socket_path, 1);
+    error = vhost_register_device_server(&dev, socket_path, 1, &vblk.vdev);
     if (error) {
         DIE("Failed to register device server: %d", error);
     }

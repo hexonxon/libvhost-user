@@ -20,6 +20,8 @@
 #include "vhost.h"
 #include "vhost-protocol.h"
 
+#include "virtio/vdev.h"
+
 #define VHOST_SUPPORTED_FEATURES (\
     (1ull << VHOST_USER_F_PROTOCOL_FEATURES) | \
     0)
@@ -260,11 +262,15 @@ error_out:
     return error;
 }
 
-int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path, uint8_t num_queues)
+int vhost_register_device_server(struct vhost_dev* dev,
+                                 const char* socket_path,
+                                 uint8_t num_queues,
+                                 struct virtio_dev* vdev)
 {
     VHOST_VERIFY(dev);
     VHOST_VERIFY(socket_path);
     VHOST_VERIFY(num_queues);
+    VHOST_VERIFY(vdev);
 
     memset(dev, 0, sizeof(*dev));
 
@@ -283,6 +289,8 @@ int vhost_register_device_server(struct vhost_dev* dev, const char* socket_path,
         dev->vrings[i].dev = dev;
         vring_reset(dev->vrings + i);
     }
+
+    dev->vdev = vdev;
 
     LIST_INSERT_HEAD(&g_vhost_dev_list, dev, link);
     return 0;
@@ -330,7 +338,7 @@ void vring_reset(struct vring* vring)
      * Since we don't know when VHOST_USER_F_PROTOCOL_FEATURES will be negotiated,
      * we assume vring to be always enabled until negotiation happens.
      */
-    vring->is_enabled = !has_feature(vring->dev->negotiated_features, VHOST_USER_F_PROTOCOL_FEATURES);
+    vring->is_enabled = !vring->dev->has_protocol_features;
     vring->is_started = false;
 }
 
@@ -424,6 +432,8 @@ typedef int (*handler_fptr) (struct vhost_dev*, struct vhost_user_message*, int*
 static int get_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
 {
     msg->u64 = VHOST_SUPPORTED_FEATURES;
+    msg->u64 |= dev->vdev->supported_features;
+
     msg->hdr.size = sizeof(msg->u64);
     return 0;
 }
@@ -434,13 +444,12 @@ static int set_features(struct vhost_dev* dev, struct vhost_user_message* msg, i
         return -1;
     }
 
-    if (msg->u64 & ~VHOST_SUPPORTED_FEATURES) {
-        /* Master lies about features we can support */
-        return -1;
+    if (has_feature(msg->u64, VHOST_USER_F_PROTOCOL_FEATURES)) {
+        dev->has_protocol_features = true;
     }
 
-    dev->negotiated_features = msg->u64;
-    return 0;
+    /* Devices don't care about vhost features */
+    return virtio_dev_set_features(dev->vdev, msg->u64 & ~VHOST_SUPPORTED_FEATURES);
 }
 
 static int get_protocol_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
@@ -582,9 +591,7 @@ static int get_config(struct vhost_dev* dev, struct vhost_user_message* msg, int
     }
 
     uint32_t space_avail = size - offset;
-    memcpy(msg->device_config_space.data + offset, dev->config_space, space_avail);
-
-    return 0;
+    return virtio_dev_get_config(dev->vdev, msg->device_config_space.data + offset, space_avail);
 }
 
 enum {
@@ -815,7 +822,7 @@ void vhost_reset_dev(struct vhost_dev* dev)
     /* Drop client connection */
     drop_connection(dev);
 
-    dev->negotiated_features = 0;
+    dev->has_protocol_features = false;
     dev->negotiated_protocol_features = 0;
     dev->session_started = false;
 

@@ -5,6 +5,7 @@ include $(ROOT_DIR)/Makefile.common
 BINDIR := $(ROOT_DIR)/build-x86/tools/server
 TARGET := $(BINDIR)/vhost-server
 OBJS := $(patsubst %.c, $(BINDIR)/%.o, $(wildcard *.c))
+LDFLAGS += -Wl,-rpath=$(ROOT_DIR)/build-x86 -L$(ROOT_DIR)/build-x86 -L$(ROOT_DIR)/build-x86/virtio
 
 all: $(TARGET)
 
@@ -15,7 +16,7 @@ $(BINDIR)/%.o: %.c
 	$(CC) $(CFLAGS) -I$(ROOT_DIR)/include -c $< -o $@
 
 $(TARGET): $(BINDIR) $(OBJS)
-	$(CC) $(LDFLAGS) $(OBJS) -Wl,-rpath=$(ROOT_DIR)/build-x86 -L$(ROOT_DIR)/build-x86 -lvhost -o $@
+	$(CC) $(LDFLAGS) $(OBJS) -lvhost -lvirtqueue -o $@
 
 clean:
 	rm -rf $(TARGET) $(OBJS)
