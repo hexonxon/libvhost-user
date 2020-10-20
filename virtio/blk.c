@@ -12,6 +12,15 @@
     (1ull << VIRTIO_BLK_F_BLK_SIZE) | \
     0)
 
+static void vblk_get_config(struct virtio_dev* vdev, void* buffer)
+{
+    struct virtio_blk* vblk = container_of(vdev, struct virtio_blk, vdev);
+    struct virtio_blk_config* cfg = buffer;
+
+    cfg->capacity = vblk->total_sectors;
+    cfg->blk_size = vblk->block_size;
+}
+
 int virtio_blk_init(struct virtio_blk* vblk)
 {
     if (!vblk) {
@@ -26,11 +35,11 @@ int virtio_blk_init(struct virtio_blk* vblk)
         return -EINVAL;
     }
 
-    vblk->features = 0;
-    vblk->supported_features = VBLK_DEFAULT_FEATURES;
+    vblk->vdev.features = 0;
+    vblk->vdev.supported_features = VBLK_DEFAULT_FEATURES;
 
     if (vblk->readonly) {
-        vblk->supported_features |= VIRTIO_BLK_F_RO;
+        vblk->vdev.supported_features |= VIRTIO_BLK_F_RO;
     }
 
     /*
@@ -40,33 +49,11 @@ int virtio_blk_init(struct virtio_blk* vblk)
      * TIO_BLK_F_FLUSH was, the driver SHOULD assume presence of a writeback cache.
      */
     if (vblk->writeback) {
-        vblk->supported_features |= (1ull << VIRTIO_BLK_F_FLUSH);
+        vblk->vdev.supported_features |= (1ull << VIRTIO_BLK_F_FLUSH);
     }
 
-    return 0;
-}
-
-void virtio_blk_get_config(struct virtio_blk* vblk, struct virtio_blk_config* cfg)
-{
-    if (!vblk || !cfg) {
-        return;
-    }
-
-    cfg->capacity = vblk->total_sectors;
-    cfg->blk_size = vblk->block_size;
-}
-
-int virtio_blk_set_features(struct virtio_blk* vblk, uint64_t features)
-{
-    if (!vblk) {
-        return -EINVAL;
-    }
-
-    if (features & ~vblk->supported_features) {
-        return -EINVAL;
-    }
-
-    vblk->features = features;
+    vblk->vdev.config_size = sizeof(struct virtio_blk_config);
+    vblk->vdev.get_config = vblk_get_config;
     return 0;
 }
 

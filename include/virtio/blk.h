@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include "virtio/virtio10.h"
+#include "virtio/vdev.h"
 
 struct virtqueue;
 
@@ -65,6 +66,9 @@ struct blk_io_request
  */
 struct virtio_blk
 {
+    /** Generic vdev context */
+    struct virtio_dev vdev;
+
     /*
      * Fields below are set by the client code before calling virtio_blk_init
      * to describe the device layout and options
@@ -81,33 +85,12 @@ struct virtio_blk
 
     /** Underlying storage supports caching, device needs to expose writeback flush to driver */
     bool writeback;
-
-    /*
-     * Fields below are set by the implementation
-     */
-
-    /** Features this device can advertise to the driver */
-    uint64_t supported_features;
-
-    /** Features this device negotiated with the driver */
-    uint64_t features;
 };
 
 /**
  * Initialize virtio blk device state
  */
 int virtio_blk_init(struct virtio_blk* vblk);
-
-/**
- * Produce a config definition for this device
- */
-void virtio_blk_get_config(struct virtio_blk* vblk, struct virtio_blk_config* cfg);
-
-/**
- * Set features driver wants to negotiate.
- * If driver attempts to set something we didn't advertise, we will fail here.
- */
-int virtio_blk_set_features(struct virtio_blk* vblk, uint64_t features);
 
 /**
  * Dequeue next request from the device's virtqueue.
