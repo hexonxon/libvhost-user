@@ -13,6 +13,7 @@
 #define PAGE_SIZE 4096ull
 
 struct vhost_user_message;
+struct virtio_dev;
 
 /**
  * Vring is a vhost name for a virtio virtqueue over shared guest memory
@@ -74,6 +75,16 @@ int vring_start(struct vring* vring);
 void vring_stop(struct vring* vring);
 
 /**
+ * Client-provided virtqueue event handler callback.
+ *
+ * This is implemented by the client to be notified of vring events we see through vhost.
+ * It is entirely up to client to talk to its virtio device when handling those events.
+ *
+ * Non-0 return value will be treated as an error and a reason to reset the device.
+ */
+typedef int (*vring_event_handler_cb) (struct virtio_dev* vdev, struct vring* vring);
+
+/**
  * Vhost device.
  * Basic vhost slave per-device context independent of the actual device type.
  */
@@ -107,6 +118,9 @@ struct vhost_dev
     /** Virtio device we are servicing */
     struct virtio_dev* vdev;
 
+    /** Client handler for device vring events */
+    vring_event_handler_cb vring_cb;
+
     LIST_ENTRY(vhost_dev) link;
 };
 
@@ -121,7 +135,8 @@ struct vhost_dev
 int vhost_register_device_server(struct vhost_dev* dev,
                                  const char* socket_path,
                                  uint8_t num_queues,
-                                 struct virtio_dev* vdev);
+                                 struct virtio_dev* vdev,
+                                 vring_event_handler_cb vring_cb);
 
 /**
  * Reset vhost device state and drop master connection if any

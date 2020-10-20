@@ -27,6 +27,13 @@ static void usage(void)
     fprintf(stderr, "vhost-server socket-path\n");
 }
 
+static int handle_vring_event(struct virtio_dev* vdev, struct vring* vring)
+{
+    /* TODO: implement me */
+    fprintf(stdout, "Got an event on vring %p", vring);
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     if (argc != 2) {
@@ -53,7 +60,7 @@ int main(int argc, char** argv)
     }
 
     struct vhost_dev dev;
-    error = vhost_register_device_server(&dev, socket_path, 1, &vblk.vdev);
+    error = vhost_register_device_server(&dev, socket_path, 1, &vblk.vdev, handle_vring_event);
     if (error) {
         DIE("Failed to register device server: %d", error);
     }

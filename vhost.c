@@ -265,12 +265,14 @@ error_out:
 int vhost_register_device_server(struct vhost_dev* dev,
                                  const char* socket_path,
                                  uint8_t num_queues,
-                                 struct virtio_dev* vdev)
+                                 struct virtio_dev* vdev,
+                                 vring_event_handler_cb vring_cb)
 {
     VHOST_VERIFY(dev);
     VHOST_VERIFY(socket_path);
     VHOST_VERIFY(num_queues);
     VHOST_VERIFY(vdev);
+    VHOST_VERIFY(vring_cb);
 
     memset(dev, 0, sizeof(*dev));
 
@@ -291,6 +293,7 @@ int vhost_register_device_server(struct vhost_dev* dev,
     }
 
     dev->vdev = vdev;
+    dev->vring_cb = vring_cb;
 
     LIST_INSERT_HEAD(&g_vhost_dev_list, dev, link);
     return 0;
@@ -303,6 +306,7 @@ int vhost_register_device_server(struct vhost_dev* dev,
 static void handle_vring_event(struct event_cb* cb, int fd, uint32_t events)
 {
     struct vring* vring = cb->ptr;
+    struct vhost_dev* dev = vring->dev;
 
     VHOST_VERIFY(vring);
     VHOST_VERIFY((events & ~(uint32_t)(EPOLLIN | EPOLLHUP | EPOLLERR)) == 0);
@@ -316,8 +320,10 @@ static void handle_vring_event(struct event_cb* cb, int fd, uint32_t events)
         if (events & EPOLLIN) {
             /* According to the spec vrings are started when they receive a kick */
             vring_start(vring);
-
-            /* TODO: handle event */
+            int error = dev->vring_cb(dev->vdev, vring);
+            if (error) {
+                vhost_reset_dev(dev);
+            }
         }
     }
 }
