@@ -75,6 +75,11 @@ int vring_start(struct vring* vring);
 void vring_stop(struct vring* vring);
 
 /**
+ * Send guest notification through vring's callfd
+ */
+void vring_notify(struct vring* vring);
+
+/**
  * Client-provided virtqueue event handler callback.
  *
  * This is implemented by the client to be notified of vring events we see through vhost.

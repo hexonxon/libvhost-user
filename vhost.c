@@ -410,6 +410,13 @@ void vring_stop(struct vring* vring)
     vring->is_started = false;
 }
 
+void vring_notify(struct vring* vring)
+{
+    if (vring->callfd != -1) {
+        eventfd_write(vring->callfd, 0);
+    }
+}
+
 /*
  * Request handling
  */
