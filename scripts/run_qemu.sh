@@ -12,7 +12,9 @@ $QEMU \
     -object memory-backend-file,id=mem0,size=512M,mem-path=/dev/shm/vhost,share=on \
     -numa node,memdev=mem0 \
     -smp 2 \
-    -display none \
+    -vga std \
     -chardev socket,id=char0,reconnect=1,path=$VHOST_SOCK \
-    -device vhost-user-blk-pci,packed=on,chardev=char0,num-queues=1 \
+    -device vhost-user-blk-pci,packed=on,chardev=char0,num-queues=1,disable-legacy=off \
+    -chardev file,path=/tmp/debugcon.txt,id=debugcon \
+    -device isa-debugcon,iobase=0x402,chardev=debugcon \
 
