@@ -558,17 +558,6 @@ static int set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, 
         return -1;
     }
 
-    /*
-     * Although vhost spec says that "some" aspects of a vring may change if it is started,
-     * we are not prepared to change memory map right now. Maybe we will have to in the future.
-     * See if we have any started vrings and bail out if we do.
-     */
-    for (size_t i = 0; i < dev->num_queues; ++i) {
-        if (dev->vrings[i].is_started) {
-            goto reset_dev;
-        }
-    }
-
     /* Drop current memory map */
     reset_memory_map(dev);
 
