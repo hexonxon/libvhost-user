@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/mman.h>
+#include <sys/eventfd.h>
 
 #include "platform.h"
 #include "vhost.h"
@@ -318,14 +319,32 @@ static void handle_vring_event(struct event_cb* cb, int fd, uint32_t events)
         vring->kickfd = -1;
     } else {
         if (events & EPOLLIN) {
-            /* According to the spec vrings are started when they receive a kick */
-            vring_start(vring);
-            int error = dev->vring_cb(dev->vdev, vring);
+            int error = 0;
+
+            /* According to the spec vrings are started when they receive a first kick */
+            if (!vring->is_started) {
+                error = vring_start(vring);
+            } else {
+                error = dev->vring_cb(dev->vdev, vring);
+            }
+
             if (error) {
-                vhost_reset_dev(dev);
+                goto reset_dev;
+            }
+
+            /* Consume the input event */
+            eventfd_t unused;
+            error = eventfd_read(fd, &unused);
+            if (error) {
+                goto reset_dev;
             }
         }
     }
+
+    return;
+
+reset_dev:
+    vhost_reset_dev(dev);
 }
 
 void vring_reset(struct vring* vring)
