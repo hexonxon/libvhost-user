@@ -115,6 +115,10 @@ struct vhost_dev
     /** Mapped memory regions for this device */
     struct virtio_memory_map memory_map;
 
+    /** Memory regions as received from guest */
+    uint32_t num_regions;
+    struct vhost_user_mem_region regions[VHOST_USER_MAX_FDS];
+
     /** Virtio device we are servicing */
     struct virtio_dev* vdev;
 

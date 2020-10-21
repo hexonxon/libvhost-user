@@ -509,6 +509,19 @@ static int reset_owner(struct vhost_dev* dev, struct vhost_user_message* msg, in
     return 0;
 }
 
+/* Convert user address (VA mapped into master's space) to gpa */
+static uint64_t uva_to_gpa(struct vhost_dev* dev, uint64_t uva)
+{
+    for (uint32_t i = 0; i < dev->num_regions; ++i) {
+        struct vhost_user_mem_region* mr = &dev->regions[i];
+        if (mr->user_addr <= uva && uva <= mr->user_addr + mr->size - 1) {
+            return mr->guest_addr + (uva - mr->user_addr);
+        }
+    }
+
+    return (uint64_t)MAP_FAILED;
+}
+
 static void reset_memory_map(struct vhost_dev* dev)
 {
     /* Unmap mapped regions */
@@ -517,6 +530,7 @@ static void reset_memory_map(struct vhost_dev* dev)
     }
 
     dev->memory_map = VIRTIO_INIT_MEMORY_MAP;
+    dev->num_regions = 0;
 }
 
 static int set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)
@@ -567,6 +581,9 @@ static int set_mem_table(struct vhost_dev* dev, struct vhost_user_message* msg, 
 
         close(fd);
     }
+
+    memcpy(dev->regions, msg->mem_regions.regions, sizeof(*dev->regions) * msg->mem_regions.num_regions);
+    dev->num_regions = msg->mem_regions.num_regions;
 
     return 0;
 
@@ -695,9 +712,9 @@ static int set_vring_addr(struct vhost_dev* dev, struct vhost_user_message* msg,
         return -1;
     }
 
-    dev->vrings[msg->vring_state.index].avail_addr = msg->vring_address.available;
-    dev->vrings[msg->vring_state.index].desc_addr = msg->vring_address.descriptor;
-    dev->vrings[msg->vring_state.index].used_addr = msg->vring_address.used;
+    dev->vrings[msg->vring_state.index].avail_addr = uva_to_gpa(dev, msg->vring_address.available);
+    dev->vrings[msg->vring_state.index].desc_addr = uva_to_gpa(dev, msg->vring_address.descriptor);
+    dev->vrings[msg->vring_state.index].used_addr = uva_to_gpa(dev, msg->vring_address.used);
 
     return 0;
 }
