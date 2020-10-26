@@ -321,6 +321,14 @@ static void handle_vring_event(struct event_cb* cb, int fd, uint32_t events)
         if (events & EPOLLIN) {
             int error = 0;
 
+            /* Consume the input event */
+            eventfd_t unused;
+            error = eventfd_read(fd, &unused);
+            if (error) {
+                VHOST_LOG_DEBUG("eventfd_read(%d) failed", fd);
+                goto reset_dev;
+            }
+
             /* According to the spec vrings are started when they receive a first kick */
             if (!vring->is_started) {
                 error = vring_start(vring);
@@ -328,13 +336,6 @@ static void handle_vring_event(struct event_cb* cb, int fd, uint32_t events)
                 error = dev->vring_cb(dev->vdev, vring);
             }
 
-            if (error) {
-                goto reset_dev;
-            }
-
-            /* Consume the input event */
-            eventfd_t unused;
-            error = eventfd_read(fd, &unused);
             if (error) {
                 goto reset_dev;
             }
