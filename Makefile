@@ -12,7 +12,7 @@ TARGET := $(BINDIR)/libvhost.so
 all: $(TARGET)
 
 libs:
-	$(MAKE) -C virtio
+	$(MAKE) CONFIG_DEBUG=$(CONFIG_DEBUG) -C virtio
 
 $(LIBS): libs
 
