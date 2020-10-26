@@ -304,6 +304,20 @@ int vhost_register_device_server(struct vhost_dev* dev,
  * Vrings
  */
 
+static void vring_close_fd(struct vring* vring, int* fd)
+{
+    if (*fd == -1) {
+        return;
+    }
+
+    if (*fd == vring->kickfd) {
+        vhost_evloop_del_fd(*fd);
+    }
+
+    close(*fd);
+    *fd = -1;
+}
+
 static void handle_vring_event(struct event_cb* cb, int fd, uint32_t events)
 {
     struct vring* vring = cb->ptr;
@@ -314,9 +328,7 @@ static void handle_vring_event(struct event_cb* cb, int fd, uint32_t events)
 
     /* Handler disconnects first */
     if (events & (EPOLLHUP | EPOLLERR)) {
-        vhost_evloop_del_fd(vring->kickfd);
-        close(vring->kickfd);
-        vring->kickfd = -1;
+        vring_close_fd(vring, &vring->kickfd);
     } else {
         if (events & EPOLLIN) {
             int error = 0;
@@ -352,9 +364,9 @@ void vring_reset(struct vring* vring)
 {
     VHOST_VERIFY(vring);
 
-    vring->kickfd = -1;
-    vring->callfd = -1;
-    vring->errfd = -1;
+    vring_close_fd(vring, &vring->kickfd);
+    vring_close_fd(vring, &vring->callfd);
+    vring_close_fd(vring, &vring->errfd);
 
     /**
      * Vring is enabled when:
@@ -659,6 +671,9 @@ static int set_vring_fd(struct vhost_dev* dev, struct vhost_user_message* msg, i
     case VRING_FD_ERR: fd = &dev->vrings[vring_idx].errfd; break;
     default: VHOST_VERIFY(0);
     };
+
+    /* Close fd in case it was open */
+    vring_close_fd(&dev->vrings[vring_idx], fd);
 
     *fd = (invalid_fd ? -1 : fds[0]);
     return 0;
