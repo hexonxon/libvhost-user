@@ -144,6 +144,7 @@ struct virtio_blk_config {
 #define VIRTIO_BLK_T_IN     0
 #define VIRTIO_BLK_T_OUT    1
 #define VIRTIO_BLK_T_FLUSH  4
+#define VIRTIO_BLK_T_GET_ID 8
 
 struct virtio_blk_req {
     le32 type;
@@ -161,3 +162,5 @@ struct virtio_blk_req {
 struct virtio_blk_req_status {
     u8 status;
 };
+
+#define VIRTIO_BLK_ID_BYTES 20  /* ID string length */

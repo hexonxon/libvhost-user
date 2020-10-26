@@ -25,6 +25,7 @@ enum blk_io_type
     BLK_IO_READ = VIRTIO_BLK_T_IN,
     BLK_IO_WRITE = VIRTIO_BLK_T_OUT,
     BLK_IO_FLUSH = VIRTIO_BLK_T_FLUSH,
+    BLK_IO_GET_ID = VIRTIO_BLK_T_GET_ID,
 };
 
 /**

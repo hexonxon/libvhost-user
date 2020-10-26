@@ -82,6 +82,11 @@ static void complete_blk_request(struct virtio_blk* vblk, struct virtio_blk_io* 
     free(vblk_io);
 }
 
+static bool is_good_status_buf(const struct virtqueue_buffer* buf)
+{
+    return buf->len == sizeof(u8) && !buf->ro;
+}
+
 static struct virtio_blk_io* blk_rw(struct virtio_blk* vblk,
                                     const struct virtio_blk_req* hdr,
                                     struct virtqueue_buffer_iter* iter)
@@ -111,7 +116,7 @@ static struct virtio_blk_io* blk_rw(struct virtio_blk* vblk,
     while (virtqueue_next_buffer(iter, &buf)) {
         if (!virtqueue_has_next_buffer(iter)) {
             /* The last one is a status descriptor */
-            if (buf.len != sizeof(u8) || buf.ro) {
+            if (!is_good_status_buf(&buf)) {
                 goto error_out;
             }
 
@@ -167,6 +172,36 @@ error_out:
     return NULL;
 }
 
+static struct virtio_blk_io* blk_get_id(struct virtio_blk* vblk,
+                                        const struct virtio_blk_req* hdr,
+                                        struct virtqueue_buffer_iter* iter)
+{
+    /* We expect a single data buffer followed by status buffer for GET_ID */
+    struct virtqueue_buffer bufs[2];
+    if (!virtqueue_next_buffer(iter, &bufs[0]) || !virtqueue_next_buffer(iter, &bufs[1])) {
+        return NULL;
+    }
+
+    if (!is_good_status_buf(&bufs[1])) {
+        return NULL;
+    }
+
+    /* TODO: we would like to avoid allocs on io handling path if possible */
+    struct virtio_blk_io* vblk_io = malloc(vblk_io_size(1));
+    if (!vblk_io) {
+        return NULL;
+    }
+
+    vblk_io->vq = iter->vq;
+    vblk_io->pstatus = bufs[1].ptr;
+    vblk_io->head = iter->head; /* TODO: be less intrusive here */
+    vblk_io->bio.type = BLK_IO_GET_ID;
+    vblk_io->bio.nvecs = 1;
+    vblk_io->bio.vecs[0] = (struct virtio_iovec) { bufs[0].ptr, bufs[0].len };
+
+    return vblk_io;
+}
+
 static struct virtio_blk_io* handle_blk_request(struct virtio_blk* vblk, struct virtqueue_buffer_iter* iter)
 {
     struct virtio_blk_io* vblk_io = NULL;
@@ -191,6 +226,10 @@ static struct virtio_blk_io* handle_blk_request(struct virtio_blk* vblk, struct 
         vblk_io = blk_rw(vblk, &hdr, iter);
         break;
     case VIRTIO_BLK_T_FLUSH:
+        /* TODO */
+        break;
+    case VIRTIO_BLK_T_GET_ID:
+        vblk_io = blk_get_id(vblk, &hdr, iter);
         break;
     default:
         goto drop_request;
