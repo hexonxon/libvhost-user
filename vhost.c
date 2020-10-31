@@ -25,7 +25,8 @@
 
 #define VHOST_SUPPORTED_FEATURES (\
     (1ull << VHOST_USER_F_PROTOCOL_FEATURES) | \
-    0)
+    (1ull << VIRTIO_F_INDIRECT_DESC) | \
+    (1ull << VIRTIO_F_VERSION_1))
 
 #define VHOST_SUPPORTED_PROTOCOL_FEATURES (\
     (1ull << VHOST_USER_PROTOCOL_F_MQ) | \
@@ -493,8 +494,9 @@ static int set_features(struct vhost_dev* dev, struct vhost_user_message* msg, i
         dev->has_protocol_features = true;
     }
 
-    /* Devices don't care about vhost features */
-    return virtio_dev_set_features(dev->vdev, msg->u64 & ~VHOST_SUPPORTED_FEATURES);
+    /* Devices don't care about vhost protocol features */
+    msg->u64 &= ~(1ull << VHOST_USER_F_PROTOCOL_FEATURES);
+    return virtio_dev_set_features(dev->vdev, msg->u64);
 }
 
 static int get_protocol_features(struct vhost_dev* dev, struct vhost_user_message* msg, int* fds, size_t nfds)

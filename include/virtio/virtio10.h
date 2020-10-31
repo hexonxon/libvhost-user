@@ -20,6 +20,12 @@ typedef uint16_t le16;
 typedef uint32_t le32;
 typedef uint64_t le64;
 
+/* Support for indirect descriptors */
+#define VIRTIO_F_INDIRECT_DESC 28
+/* Support for avail_event and used_event fields */
+#define VIRTIO_F_EVENT_IDX 29
+#define VIRTIO_F_VERSION_1 32
+
 struct virtq_desc {
     /* Address (guest-physical). */
     le64 addr;

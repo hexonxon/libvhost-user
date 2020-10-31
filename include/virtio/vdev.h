@@ -53,10 +53,6 @@ static inline int virtio_dev_set_features(struct virtio_dev* vdev, uint64_t feat
         return -EINVAL;
     }
 
-    if (features & ~(vdev->supported_features)) {
-        return -ENOTSUP;
-    }
-
     vdev->features = features;
     return 0;
 }
