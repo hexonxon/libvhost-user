@@ -666,11 +666,17 @@ static int set_vring_fd(struct vhost_dev* dev, struct vhost_user_message* msg, i
         return -1;
     }
 
+    struct vring* vring = &dev->vrings[vring_idx];
+    if (vring->is_started) {
+        /* We don't support changing fds on started rings */
+        return -1;
+    }
+
     int* fd;
     switch (fdtype) {
-    case VRING_FD_KICK: fd = &dev->vrings[vring_idx].kickfd; break;
-    case VRING_FD_CALL: fd = &dev->vrings[vring_idx].callfd; break;
-    case VRING_FD_ERR: fd = &dev->vrings[vring_idx].errfd; break;
+    case VRING_FD_KICK: fd = &vring->kickfd; break;
+    case VRING_FD_CALL: fd = &vring->callfd; break;
+    case VRING_FD_ERR: fd = &vring->errfd; break;
     default: VHOST_VERIFY(0);
     };
 
