@@ -14,7 +14,7 @@ $QEMU \
     -smp 2 \
     -vga std \
     -chardev socket,id=char0,reconnect=1,path=$VHOST_SOCK \
-    -device vhost-user-blk-pci,packed=on,chardev=char0,num-queues=1,disable-legacy=off \
+    -device vhost-user-blk-pci,packed=on,chardev=char0,num-queues=1,disable-legacy=on,id=blk1 \
     -chardev file,path=/tmp/debugcon.txt,id=debugcon \
     -device isa-debugcon,iobase=0x402,chardev=debugcon \
 
