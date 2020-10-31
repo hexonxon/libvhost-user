@@ -26,6 +26,7 @@
 #define VHOST_SUPPORTED_FEATURES (\
     (1ull << VHOST_USER_F_PROTOCOL_FEATURES) | \
     (1ull << VIRTIO_F_INDIRECT_DESC) | \
+    (1ull << VIRTIO_F_EVENT_IDX) | \
     (1ull << VIRTIO_F_VERSION_1))
 
 #define VHOST_SUPPORTED_PROTOCOL_FEATURES (\
@@ -395,6 +396,7 @@ int vring_start(struct vring* vring)
         return 0;
     }
 
+    struct virtio_dev* vdev = vring->dev->vdev;
     int error = virtqueue_start(&vring->vq,
                                 vring->size,
                                 vring->desc_addr,
@@ -402,6 +404,7 @@ int vring_start(struct vring* vring)
                                 vring->used_addr,
                                 vring->avail_base,
                                 vring->callfd,
+                                has_feature(vdev->features, VIRTIO_F_EVENT_IDX),
                                 &vring->dev->memory_map);
 
     if (error) {

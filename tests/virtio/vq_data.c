@@ -9,7 +9,7 @@ int vq_init(struct virtqueue* vq, uint16_t qsize, void* base, struct virtio_memo
     uint64_t avail_addr = desc_addr + sizeof(struct virtq_desc) * qsize;
     uint64_t used_addr = VIRTQ_ALIGN_UP(avail_addr + sizeof(uint16_t) * (3 + qsize));
 
-    return virtqueue_start(vq, qsize, desc_addr, avail_addr, used_addr, 0, -1, mem);
+    return virtqueue_start(vq, qsize, desc_addr, avail_addr, used_addr, 0, -1, false, mem);
 }
 
 /* Allocate memory to hold a queue of qsize descriptors and init a virtqueue on top of it */

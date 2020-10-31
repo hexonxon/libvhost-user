@@ -99,6 +99,12 @@ struct virtqueue
 
     /** Eventfd to sent driver notifications when must */
     int callfd;
+
+    /** VIRTIO_F_EVENT_IDX was negotiated */
+    bool has_event_idx;
+
+    /** Value of used idx we last saw when signalling driver event */
+    uint16_t signalled_used_idx;
 };
 
 /**
@@ -111,6 +117,7 @@ int virtqueue_start(struct virtqueue* vq,
                     uint64_t used_addr,
                     uint16_t avail_base,
                     int callfd,
+                    bool has_event_idx,
                     struct virtio_memory_map* mem);
 
 /**

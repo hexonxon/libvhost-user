@@ -10,6 +10,29 @@ static inline void virtio_mb()
     asm volatile ("mfence" ::: "memory");
 }
 
+static inline uint16_t* get_used_event(struct virtqueue* vq)
+{
+    return (void*) &vq->avail->ring[vq->qsize];
+}
+
+static inline uint16_t* get_avail_event(struct virtqueue* vq)
+{
+    return (void*) &vq->used->ring[vq->qsize];
+}
+
+/** Update avail event to latest seen avail idx value to always get driver notifications */
+static inline void update_avail_event(struct virtqueue* vq)
+{
+    if (!vq->has_event_idx) {
+        return;
+    }
+
+    *get_avail_event(vq) = vq->last_seen_avail;
+
+    /* Make sure driver sees the update before checking avail idx */
+    virtio_mb();
+}
+
 int virtqueue_start(struct virtqueue* vq,
                     uint16_t qsize,
                     uint64_t desc_gpa,
@@ -17,6 +40,7 @@ int virtqueue_start(struct virtqueue* vq,
                     uint64_t used_gpa,
                     uint16_t avail_base,
                     int callfd,
+                    bool has_event_idx,
                     struct virtio_memory_map* mem)
 {
     if (!vq) {
@@ -65,9 +89,11 @@ int virtqueue_start(struct virtqueue* vq,
     vq->is_broken = false;
     vq->mem = mem;
     vq->callfd = callfd;
+    vq->has_event_idx = has_event_idx;
 
     /* We are always interested in driver events */
     vq->used->flags = 0;
+    update_avail_event(vq);
 
     return 0;
 }
@@ -273,29 +299,54 @@ bool virtqueue_dequeue_avail(struct virtqueue* vq, struct virtqueue_buffer_iter*
         start_desc_chain(chain, vq, head);
 
         vq->last_seen_avail++;
+        update_avail_event(vq);
         return true;
     }
 
     return false;
 }
 
-/** Check if we should notify driver of used buffers */
-static bool should_notify_used(struct virtqueue* vq)
+/* The following is used with USED_EVENT_IDX and AVAIL_EVENT_IDX */
+/* Assuming a given event_idx value from the other side, if
+ * we have just incremented index from old to new_idx,
+ * should we trigger an event? */
+static inline bool vring_need_event(uint16_t event_idx, uint16_t new_idx, uint16_t old)
 {
-    return vq->avail->flags == 0;
+	/* Note: Xen has similar logic for notification hold-off
+	 * in include/xen/interface/io/ring.h with req_event and req_prod
+	 * corresponding to event_idx + 1 and new_idx respectively.
+	 * Note also that req_event and req_prod in Xen start at 1,
+	 * event indexes in virtio start at 0. */
+	return (uint16_t)(new_idx - event_idx - 1) < (uint16_t)(new_idx - old);
+}
+
+/** Check if we should notify driver of used buffers */
+static bool should_notify_used(struct virtqueue* vq, uint16_t used_idx)
+{
+    if (vq->has_event_idx) {
+        uint16_t event_idx = *get_used_event(vq);
+        uint16_t old_idx = vq->signalled_used_idx;
+        return vring_need_event(event_idx, used_idx, old_idx);
+    } else {
+        return vq->avail->flags == 0;
+    }
 }
 
 void virtqueue_enqueue_used(struct virtqueue* vq, uint16_t desc_id, uint32_t nwritten)
 {
     uint16_t used_idx = read_used_idx(vq);
     vq->used->ring[get_index(vq, used_idx)] = (struct virtq_used_elem) { desc_id, nwritten };
-    write_used_idx(vq, used_idx + 1);
 
-    /* Make sure we expose used_idx before checking notification mask */
+    used_idx++;
+    write_used_idx(vq, used_idx);
+
+    /* Make sure we expose used_idx before checking notification mask/event idx */
     virtio_mb();
-    if (should_notify_used(vq)) {
+    if (should_notify_used(vq, used_idx)) {
         if (vq->callfd != -1) {
             eventfd_write(vq->callfd, 0);
         }
+
+        vq->signalled_used_idx = used_idx;
     }
 }
