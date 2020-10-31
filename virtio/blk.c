@@ -100,6 +100,10 @@ static struct virtio_blk_io* blk_rw(struct virtio_blk* vblk,
         return NULL;
     }
 
+    if (hdr->type == VIRTIO_BLK_T_OUT && vblk->readonly) {
+        return NULL;
+    }
+
     /*
      * Walk descriptor chain expecting a series of data buffers (at least 1)
      * terminated by 1-byte writable status buffer.
@@ -128,7 +132,7 @@ static struct virtio_blk_io* blk_rw(struct virtio_blk* vblk,
             goto error_out;
         }
 
-        if (!is_read && buf.ro) {
+        if (is_read && buf.ro) {
             goto error_out;
         }
 
@@ -225,15 +229,18 @@ static struct virtio_blk_io* handle_blk_request(struct virtio_blk* vblk, struct 
     case VIRTIO_BLK_T_OUT:
         vblk_io = blk_rw(vblk, &hdr, iter);
         break;
-    case VIRTIO_BLK_T_FLUSH:
-        /* TODO */
-        break;
     case VIRTIO_BLK_T_GET_ID:
         vblk_io = blk_get_id(vblk, &hdr, iter);
         break;
+    case VIRTIO_BLK_T_FLUSH:
+        /* TODO */
     default:
         goto drop_request;
     };
+
+    if (!vblk_io) {
+        goto drop_request;
+    }
 
     return vblk_io;
 

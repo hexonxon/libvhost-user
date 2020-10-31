@@ -179,8 +179,8 @@ static void rw_request_test(void)
     struct vblk_req_data req = {
         .hdr = { VIRTIO_BLK_T_IN, 0 },
         .buffers = {
-            { (void*) 0x1000, 0x1000, true },
-            { (void*) 0x4000, 0x2000, true },
+            { (void*) 0x1000, 0x1000, false },
+            { (void*) 0x4000, 0x2000, false },
         },
         .num_buffers = 2,
         .status = -1,
