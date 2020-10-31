@@ -1,7 +1,14 @@
+#include <sys/eventfd.h>
+
 #include "platform.h"
 
 #include "virtio/memory.h"
 #include "virtio/virtqueue.h"
+
+static inline void virtio_mb()
+{
+    asm volatile ("mfence" ::: "memory");
+}
 
 int virtqueue_start(struct virtqueue* vq,
                     uint16_t qsize,
@@ -9,6 +16,7 @@ int virtqueue_start(struct virtqueue* vq,
                     uint64_t avail_gpa,
                     uint64_t used_gpa,
                     uint16_t avail_base,
+                    int callfd,
                     struct virtio_memory_map* mem)
 {
     if (!vq) {
@@ -56,6 +64,10 @@ int virtqueue_start(struct virtqueue* vq,
     vq->last_seen_avail = avail_base;
     vq->is_broken = false;
     vq->mem = mem;
+    vq->callfd = callfd;
+
+    /* We are always interested in driver events */
+    vq->used->flags = 0;
 
     return 0;
 }
@@ -267,9 +279,23 @@ bool virtqueue_dequeue_avail(struct virtqueue* vq, struct virtqueue_buffer_iter*
     return false;
 }
 
+/** Check if we should notify driver of used buffers */
+static bool should_notify_used(struct virtqueue* vq)
+{
+    return vq->avail->flags == 0;
+}
+
 void virtqueue_enqueue_used(struct virtqueue* vq, uint16_t desc_id, uint32_t nwritten)
 {
     uint16_t used_idx = read_used_idx(vq);
-    vq->used[get_index(vq, used_idx)] = (struct virtq_used) { desc_id, nwritten };
+    vq->used->ring[get_index(vq, used_idx)] = (struct virtq_used_elem) { desc_id, nwritten };
     write_used_idx(vq, used_idx + 1);
+
+    /* Make sure we expose used_idx before checking notification mask */
+    virtio_mb();
+    if (should_notify_used(vq)) {
+        if (vq->callfd != -1) {
+            eventfd_write(vq->callfd, 0);
+        }
+    }
 }

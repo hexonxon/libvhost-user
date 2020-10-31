@@ -401,6 +401,7 @@ int vring_start(struct vring* vring)
                                 vring->avail_addr,
                                 vring->used_addr,
                                 vring->avail_base,
+                                vring->callfd,
                                 &vring->dev->memory_map);
 
     if (error) {
@@ -422,13 +423,6 @@ void vring_stop(struct vring* vring)
 
     /* There is nothing to tell the actual virtqueue for now */
     vring->is_started = false;
-}
-
-void vring_notify(struct vring* vring)
-{
-    if (vring->callfd != -1) {
-        eventfd_write(vring->callfd, 0);
-    }
 }
 
 /*

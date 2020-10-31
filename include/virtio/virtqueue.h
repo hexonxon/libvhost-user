@@ -96,6 +96,9 @@ struct virtqueue
 
     /** queue is broken by the guest and cannot be safely handled further */
     bool is_broken;
+
+    /** Eventfd to sent driver notifications when must */
+    int callfd;
 };
 
 /**
@@ -107,6 +110,7 @@ int virtqueue_start(struct virtqueue* vq,
                     uint64_t avail_addr,
                     uint64_t used_addr,
                     uint16_t avail_base,
+                    int callfd,
                     struct virtio_memory_map* mem);
 
 /**
