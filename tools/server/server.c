@@ -24,10 +24,88 @@ static void usage(void)
     fprintf(stderr, "vhost-server socket-path disk-image\n");
 }
 
-static int handle_vring_event(struct virtio_dev* vdev, struct vring* vring)
+static int handle_rw(struct virtio_blk* vblk, struct blk_io_request* bio)
 {
-    /* TODO: implement me */
-    fprintf(stdout, "Got an event on vring %p", vring);
+    uint64_t sector = bio->sector;
+    uint32_t total_sectors = bio->total_sectors;
+    uint32_t vec_idx = 0;
+
+    while (total_sectors > 0) {
+        if (vec_idx >= bio->nvecs) {
+            DIE("Not enough iovecs to handle request (have %d)", bio->nvecs);
+        }
+
+        struct virtio_iovec* pvec = &bio->vecs[vec_idx];
+        uint32_t nsectors = pvec->len >> VIRTIO_BLK_SECTOR_SHIFT;
+        if (nsectors > total_sectors) {
+            nsectors = total_sectors;
+        }
+
+        ssize_t res = 0;
+        size_t count = nsectors << VIRTIO_BLK_SECTOR_SHIFT;
+        off_t offset = sector << VIRTIO_BLK_SECTOR_SHIFT;
+
+        if (bio->type == BLK_IO_READ) {
+            res = pread(g_fd, pvec->ptr, count, offset);
+        } else if (bio->type == BLK_IO_WRITE) {
+            res = pwrite(g_fd, pvec->ptr, count, offset);
+        } else {
+            DIE("Unexpected request type %d", bio->type);
+        }
+
+        if (res != count) {
+            DIE("Read/write failed at offset %lu, size %zu: %d", offset, count, -errno);
+        }
+
+        sector += nsectors;
+        total_sectors -= nsectors;
+        vec_idx++;
+
+        if (pvec->len - count > 0) {
+            DIE("Still have space remaining in vector");
+        }
+    }
+
+    return 0;
+}
+
+int process_event(struct virtio_dev* vdev, struct vring* vring)
+{
+    int error = 0;
+    struct virtio_blk* vblk = (struct virtio_blk*) vdev; /* TODO: add a type conversion helper in virtio */
+
+    struct blk_io_request* bio;
+    while (true) {
+        error = virtio_blk_dequeue_request(vblk, &vring->vq, &bio);
+        if (error == -ENOENT) {
+            break;
+        }
+
+        fprintf(stdout, "Handling request type %d\n", bio->type);
+
+        if (error) {
+            fprintf(stderr, "Could not dequeue vblk request: %d\n", error);
+            return error;
+        }
+
+        if (bio->type == BLK_IO_GET_ID) {
+            snprintf(bio->vecs[0].ptr, bio->vecs[0].len, "vhost-blk-0");
+            goto complete;
+        }
+
+        /*
+         * All IO error are reported to guest and not vhost implementation
+         */
+
+        error = handle_rw(vblk, bio);
+        if (error) {
+            fprintf(stderr, "Failed handling bio %p: %d\n", bio, error);
+        }
+
+complete:
+        virtio_blk_complete_request(vblk, bio, (error ? BLK_IOERROR : BLK_SUCCESS));
+    }
+
     return 0;
 }
 
@@ -88,7 +166,7 @@ int main(int argc, char** argv)
     }
 
     struct vhost_dev dev;
-    error = vhost_register_device_server(&dev, socket_path, 1, &vblk.vdev, handle_vring_event);
+    error = vhost_register_device_server(&dev, socket_path, 1, &vblk.vdev, process_event);
     if (error) {
         DIE("Failed to register device server: %d", error);
     }
